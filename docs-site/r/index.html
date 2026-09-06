@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLink 房间信箱</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:#0f1420;color:#e8edf7;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{max-width:520px;width:92%;background:#171e2e;border:1px solid #2a3550;border-radius:16px;padding:40px 34px;text-align:center}
+h1{font-size:22px;margin-bottom:10px}
+p{color:#8fa0bd;font-size:14px;line-height:1.7}
+.code{font-family:ui-monospace,Consolas,monospace;font-size:26px;font-weight:800;letter-spacing:2px;color:#34d399;background:rgba(52,211,153,.08);border:1px dashed rgba(52,211,153,.4);border-radius:12px;padding:18px;margin:22px 0;word-break:break-all}
+button{background:#34d399;color:#04281c;font-weight:700;border:0;border-radius:10px;padding:12px 34px;font-size:15px;cursor:pointer}
+button:hover{opacity:.9}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>⛏️ CLink 房间信箱</h1>
+  <div class="code" id="mid">…</div>
+  <button onclick="copyId()">复制信箱编号</button>
+  <p style="margin-top:22px">这一页是 CLink 联机工具的自动中转页，<b>无需手动访问</b>。<br>
+  如果你看到了这个页面，说明房主把房间码发对了位置 😄<br>
+  请回到 CLink 程序输入 6 位房间码加入。</p>
+  <p style="margin-top:16px"><a href="https://ccdsyy.github.io" style="color:#34d399;text-decoration:none">ccdsyy.github.io</a></p>
+</div>
+<script>
+  const id = new URLSearchParams(location.search).get('id') || '（缺少编号）';
+  document.getElementById('mid').textContent = id;
+  function copyId() {
+    if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {});
+  }
+</script>
+</body>
+</html>

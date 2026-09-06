@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLink · Minecraft 一键联机</title>
+<meta name="description" content="CLink：Minecraft Java 版 P2P 一键联机工具。没有公网 IP 也能联机，6 位房间码开玩。">
+<style>
+:root{--bg:#0f1420;--text:#e8edf7;--muted:#8fa0bd;--green:#34d399;--line:#2a3550}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+.hero{text-align:center;padding:90px 20px 60px;background:radial-gradient(700px 320px at 50% -40px,rgba(52,211,153,.18),transparent)}
+.logo{font-size:56px;font-weight:900;letter-spacing:2px}
+.logo em{color:var(--green);font-style:normal}
+.tag{color:var(--muted);font-size:18px;margin:12px 0 34px}
+.btn{display:inline-block;background:var(--green);color:#04281c;font-weight:700;font-size:18px;padding:14px 42px;border-radius:12px;text-decoration:none;box-shadow:0 10px 30px rgba(52,211,153,.35);transition:transform .15s}
+.btn:hover{transform:translateY(-2px)}
+.steps{max-width:900px;margin:0 auto;padding:50px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.step{background:#171e2e;border:1px solid var(--line);border-radius:14px;padding:26px 22px}
+.step .n{display:inline-block;width:34px;height:34px;border-radius:50%;background:rgba(52,211,153,.15);color:var(--green);font-weight:800;text-align:center;line-height:34px;margin-bottom:12px}
+.step h3{font-size:17px;margin-bottom:8px}
+.step p{color:var(--muted);font-size:14px}
+.tiers{max-width:900px;margin:0 auto;padding:0 20px 50px}
+.tiers h2, .faq h2{text-align:center;font-size:26px;margin-bottom:26px}
+.tier-table{width:100%;border-collapse:collapse;background:#171e2e;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.tier-table td,.tier-table th{padding:14px 18px;border-bottom:1px solid var(--line);font-size:15px}
+.tier-table th{color:var(--muted);font-weight:600;text-align:left}
+.faq{max-width:760px;margin:0 auto;padding:0 20px 60px}
+details{background:#171e2e;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:12px}
+summary{cursor:pointer;font-weight:600}
+details p{color:var(--muted);margin-top:10px;font-size:14px}
+footer{border-top:1px solid var(--line);padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
+footer b{color:var(--text)}
+footer a{color:var(--green);text-decoration:none}
+.chip{display:inline-block;background:rgba(139,92,246,.15);color:#b79cff;border-radius:999px;padding:3px 12px;font-size:12px;margin:0 4px}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="logo">⛏️ CL<em>ink</em></div>
+  <div class="tag">Minecraft 一键联机 · 没有公网 IP 也照玩 · 房间码就是全部</div>
+  <a class="btn" href="https://github.com/ccdsyy/clink/releases" target="_blank" rel="noopener">下载 CLink（Windows）</a>
+  <div style="margin-top:18px"><span class="chip">IPv6 直连</span><span class="chip">P2P 打洞</span><span class="chip">端到端加密</span><span class="chip">开源免费</span></div>
+</section>
+
+<section class="steps">
+  <div class="step"><span class="n">1</span><h3>房主：对局域网开放</h3><p>游戏里 Esc →「对局域网开放」，打开 CLink 点「创建房间」，端口自动识别。</p></div>
+  <div class="step"><span class="n">2</span><h3>发房间码</h3><p>6 位房间码自动复制到剪贴板，微信/QQ 随手发给小伙伴。</p></div>
+  <div class="step"><span class="n">3</span><h3>客机：一键加入</h3><p>输入房间码 → 点「一键加入」→ 游戏里直接连接粘贴 127.0.0.1:25565，开玩！</p></div>
+</section>
+
+<section class="tiers">
+  <h2>三层智能网络</h2>
+  <table class="tier-table">
+    <tr><th>层级</th><th>方式</th><th>适用</th></tr>
+    <tr><td>⚡ Tier 1</td><td>IPv6 极速直连</td><td>双方有公网 IPv6（运营商大范围普及中）</td></tr>
+    <tr><td>🛟 Tier 2</td><td>WebRTC P2P 打洞</td><td>普通宽带 / 校园网</td></tr>
+    <tr><td>🆘 Tier 3</td><td>热点指引 / 自建中转</td><td>对称 NAT 环境</td></tr>
+  </table>
+</section>
+
+<section class="faq">
+  <h2>常见问题</h2>
+  <details open><summary>安全吗？会被陌生人闯进来吗？</summary><p>房间信件端到端加密（AES-256-GCM），信箱服务器也看不到内容；6 位码约 8.9 亿组合，房间 6 小时自动过期。知道房间码 = 是房间成员，如同知道密码 = 能进门。</p></details>
+  <details><summary>连不上怎么办？</summary><p>提示"网络环境复杂"时，让一方切换手机热点再试。技术党可在高级设置自建 TURN 中转。</p></details>
+  <details><summary>支持多少人？</summary><p>同一房间最多 31 位小伙伴依次加入。</p></details>
+</section>
+
+<footer>
+  <div style="margin-bottom:10px">⛏️ <b>CLink</b> · 开源免费 · 把复杂留给机器，把快乐留给你</div>
+  <div>官网：你正在这里 · <a href="https://github.com/ccdsyy/clink" target="_blank" rel="noopener">GitHub 源码</a> · 视频教程：抖音号 <b>ccdsyyznb</b></div>
+  <div style="margin-top:8px">作者 QQ：<b>3310339901</b> · 官方互助 QQ 群：<b>1108157805</b></div>
+  <div style="margin-top:16px;font-size:12px">MIT License · 信令服务由第三方公共剪贴板提供，内容端到端加密</div>
+</footer>
+
+</body>
+</html>

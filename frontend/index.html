@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLink · Minecraft 一键联机</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg-glow"></div>
+<main>
+  <header>
+    <div class="logo">⛏️ CLink</div>
+    <div class="sub">Minecraft 一键联机 · 房间码就是全部</div>
+  </header>
+
+  <div class="cards">
+    <!-- 房主 -->
+    <section class="card" id="card-host">
+      <h2>🏠 开房间（我是房主）</h2>
+      <label for="mc-port">游戏端口（在游戏里“对局域网开放”后会自动填入，也可手动输入）</label>
+      <div class="row">
+        <input id="mc-port" type="text" inputmode="numeric" placeholder="25565" autocomplete="off">
+        <button id="btn-create" class="primary">创建房间</button>
+      </div>
+      <div class="status" id="host-status">先开单人世界 → Esc → 「对局域网开放」，再回来点「创建房间」</div>
+
+      <div class="room hidden" id="room-box">
+        <div class="label">房间码（已自动复制，发给小伙伴就行）</div>
+        <div class="code" id="room-code">· · · · · ·</div>
+        <button class="ghost small" id="btn-copy-code">再复制一次</button>
+        <div class="phase" id="host-phase">房间准备中…</div>
+        <div class="guests" id="host-guests"></div>
+      </div>
+    </section>
+
+    <!-- 客机 -->
+    <section class="card" id="card-guest">
+      <h2>🎒 加入房间（我是客机）</h2>
+      <label for="room-input">输入房主发来的 6 位房间码</label>
+      <div class="row">
+        <input id="room-input" maxlength="6" placeholder="如 ab3d7k" autocomplete="off" spellcheck="false">
+        <button id="btn-join" class="primary">一键加入</button>
+      </div>
+      <div class="status" id="guest-status">拿到房间码就可以加入啦</div>
+
+      <div class="room hidden" id="addr-box">
+        <div class="label">连接成功！下面的地址已复制</div>
+        <div class="code" id="addr">127.0.0.1:25565</div>
+        <div class="phase">打开游戏 → 多人游戏 → 直接连接 → 粘贴即可</div>
+        <button class="ghost small" id="btn-copy-addr">再复制一次</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toolbar">
+    <button class="ghost hidden" id="btn-leave">🚪 退出联机</button>
+    <button class="ghost" id="btn-advanced">⚙ 高级设置</button>
+  </div>
+
+  <section class="advanced hidden" id="advanced">
+    <h3>高级设置（一般不用管）</h3>
+    <div class="adv-grid">
+      <div class="adv-item">
+        <label>中转服务器 TURN（网络特别差时填写）</label>
+        <input id="adv-turn" type="text" placeholder="turn:服务器:端口 或 用户名:密码@turn:服务器:端口">
+      </div>
+      <div class="adv-item">
+        <label>游戏目录（自动找端口失败时手动指定 .minecraft 目录）</label>
+        <input id="adv-mcdir" type="text" placeholder="留空自动查找">
+      </div>
+      <div class="adv-item">
+        <label>信箱服务（一般不用改）</label>
+        <input id="adv-mailbox" type="text" placeholder="https://paste.sdjz.wiki">
+      </div>
+    </div>
+    <div class="adv-actions">
+      <button class="ghost small" id="btn-save-adv">保存</button>
+      <button class="ghost small" id="btn-netcheck">网络体检</button>
+      <span class="netcheck-result" id="netcheck-result"></span>
+    </div>
+  </section>
+
+  <footer>
+    <div class="foot-line">CLink · 开源免费 · 把复杂留给机器，把快乐留给你</div>
+    <div class="links">
+      <a href="https://ccdsyy.github.io" target="_blank" rel="noopener">官网 &amp; 开源地址：ccdsyy.github.io</a>
+      <span>视频教程 &amp; 更新动态：抖音号 <b>ccdsyyznb</b></span>
+      <span>作者 QQ：<b>3310339901</b></span>
+      <span>官方互助 QQ 群：<b>1108157805</b>（加群交流/反馈问题）</span>
+    </div>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
