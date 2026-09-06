@@ -8,7 +8,7 @@
 
 **CLink 把这些全部藏进底层——你只需要一个 6 位房间码。**
 
-[官网](https://ccdsyy.github.io) · [视频教程（抖音号 ccdsyyznb）](https://www.douyin.com) · QQ 交流群 `1108157805`
+[官网](https://ccdsyy.github.io) · [视频教程（抖音号 ccdsyyznb）](https://www.douyin.com/user/MS4wLjABAAAASKARfxM-PjyGJvthbLpvjSfR9j129Rno8UWs3D-HPWk?from_tab_name=main) · QQ 交流群 `1108157805`
 
 </div>
 
