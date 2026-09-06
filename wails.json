@@ -1,0 +1,18 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "CLink",
+  "outputfilename": "CLink",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dir": "frontend",
+  "author": {
+    "name": "ccdsyy",
+    "email": ""
+  },
+  "info": {
+    "productName": "CLink",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 ccdsyy",
+    "comments": "Minecraft P2P 一键联机工具"
+  }
+}
