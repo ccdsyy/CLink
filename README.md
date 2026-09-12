@@ -51,7 +51,7 @@ CLink 内置**三层智能网络**，自动选最快的方式把你们连起来�
 
 ## 📦 下载
 
-- Windows：从 [Releases](https://ccdsyy.github.io) 下载 `CLink.exe`，双击即用（绿色单文件，无需安装）
+- Windows：从 [Releases](https://github.com/ccdsyy/CLink/releases/tag/%E5%8F%AF%E6%89%A7%E8%A1%8C%E6%96%87%E4%BB%B6) 下载 `CLink.exe`，双击即用（绿色单文件，无需安装）
 - 首次创建房间时 Windows 会弹一次 UAC 授权——这是为了自动添加防火墙放行规则，点"是"即可，仅此一次
 
 <details>
