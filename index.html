@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLink — Minecraft 联机。就这么简单。</title>
+<meta name="description" content="CLink：Minecraft Java 版 P2P 一键联机工具。无需公网 IP，6 位房间码开玩。免费开源。">
+<meta property="og:title" content="CLink — Minecraft 联机。就这么简单。">
+<meta property="og:description" content="无需公网 IP，6 位房间码开玩。三层智能网络自动选路，端到端加密。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2334d399'/%3E%3Cstop offset='1' stop-color='%23818cf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Ctext x='32' y='44' font-size='34' font-weight='800' text-anchor='middle' fill='white' font-family='system-ui'%3EC%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --text: #1d1d1f;
+    --text-2: #6e6e73;
+    --bg: #ffffff;
+    --bg-gray: #f5f5f7;
+    --blue: #0071e3;
+    --blue-hover: #0077ed;
+    --link-dark: #2997ff;
+    --grad: linear-gradient(92deg, #34d399 0%, #22d3ee 45%, #818cf8 100%);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: rgba(52, 211, 153, .28); }
+
+  /* ===== 磨砂导航 ===== */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    height: 48px;
+    display: flex; align-items: center; justify-content: center; gap: 40px;
+    background: rgba(251, 251, 253, .72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, .08);
+    transition: box-shadow .3s;
+  }
+  nav.scrolled { box-shadow: 0 1px 12px rgba(0, 0, 0, .06); }
+  nav .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; }
+  nav a.nav-item { font-size: 13px; color: rgba(29, 29, 31, .8); transition: color .2s; }
+  nav a.nav-item:hover { color: var(--text); }
+  nav .nav-cta {
+    background: var(--blue); color: #fff !important;
+    padding: 5px 15px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    transition: background .2s, transform .2s;
+  }
+  nav .nav-cta:hover { background: var(--blue-hover); transform: scale(1.03); }
+  @media (max-width: 720px) { nav { gap: 18px; } nav a.nav-item:not(.nav-cta) { display: none; } }
+
+  /* ===== Hero ===== */
+  .hero {
+    padding: 140px 24px 70px;
+    text-align: center;
+    background:
+      radial-gradient(900px 480px at 70% -10%, rgba(129, 140, 248, .14), transparent 65%),
+      radial-gradient(900px 480px at 25% 0%, rgba(52, 211, 153, .16), transparent 65%),
+      var(--bg);
+  }
+  .hero .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 600; color: #0a7d54;
+    background: rgba(52, 211, 153, .12);
+    padding: 6px 16px; border-radius: 999px;
+    margin-bottom: 26px;
+  }
+  .hero .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  h1.hero-title {
+    font-size: clamp(52px, 9vw, 104px);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.06;
+  }
+  h1.hero-title .grad {
+    background: var(--grad);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .hero .sub {
+    max-width: 640px; margin: 26px auto 0;
+    font-size: clamp(18px, 2.4vw, 24px);
+    color: var(--text-2); font-weight: 400;
+  }
+  .hero .cta-row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-top: 40px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 18px; font-weight: 500;
+    padding: 15px 34px; border-radius: 999px;
+    transition: transform .25s cubic-bezier(.16,1,.3,1), background .25s, box-shadow .25s;
+  }
+  .btn-primary { background: var(--blue); color: #fff; box-shadow: 0 8px 26px rgba(0, 113, 227, .35); }
+  .btn-primary:hover { background: var(--blue-hover); transform: translateY(-2px) scale(1.02); }
+  .btn-ghost { background: transparent; color: var(--blue); border: 1.5px solid rgba(0, 113, 227, .45); }
+  .btn-ghost:hover { background: rgba(0, 113, 227, .06); transform: translateY(-2px); }
+  .hero .meta { margin-top: 20px; font-size: 13px; color: #86868b; }
+  .hero .meta b { color: var(--text); font-weight: 600; }
+
+  /* ===== 应用窗口 mockup ===== */
+  .showcase { padding: 30px 24px 110px; background: var(--bg); }
+  .window {
+    max-width: 860px; margin: 0 auto;
+    border-radius: 18px;
+    background: #0f1420;
+    box-shadow: 0 40px 90px -20px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .06);
+    overflow: hidden;
+    transform: perspective(1600px) rotateX(4deg);
+    transition: transform .8s cubic-bezier(.16,1,.3,1);
+  }
+  .window:hover { transform: perspective(1600px) rotateX(0deg) scale(1.01); }
+  .win-bar {
+    height: 42px; background: #171e2e;
+    display: flex; align-items: center; padding: 0 16px; gap: 8px;
+  }
+  .win-bar .l { width: 12px; height: 12px; border-radius: 50%; }
+  .win-bar .r { background: #ff5f57; } .win-bar .y { background: #febc2e; } .win-bar .g { background: #28c840; }
+  .win-bar .title { flex: 1; text-align: center; color: #8fa0bd; font-size: 12.5px; }
+  .win-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 22px; }
+  @media (max-width: 640px) { .win-body { grid-template-columns: 1fr; } }
+  .win-card { background: #171e2e; border-radius: 14px; padding: 20px 18px; }
+  .win-card h4 { color: #e8edf7; font-size: 15px; margin-bottom: 14px; }
+  .win-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .win-input {
+    flex: 1; height: 40px; border-radius: 9px;
+    background: #0f1420; border: 1px solid #2a3550;
+    color: #8fa0bd; font-size: 13px;
+    display: flex; align-items: center; padding: 0 12px;
+  }
+  .win-btn {
+    height: 40px; padding: 0 18px; border-radius: 9px;
+    background: linear-gradient(135deg, #34d399, #10b981);
+    color: #04281c; font-weight: 700; font-size: 13px;
+    display: flex; align-items: center;
+  }
+  .win-btn.blue { background: linear-gradient(135deg, #60a5fa, #3b82f6); color: #fff; }
+  .win-code {
+    margin: 16px 0 12px;
+    text-align: center;
+    font-size: 34px; font-weight: 800; letter-spacing: 6px;
+    color: #34d399;
+    background: rgba(52, 211, 153, .08);
+    border: 1.5px dashed rgba(52, 211, 153, .4);
+    border-radius: 12px; padding: 16px 0;
+  }
+  .win-note { color: #8fa0bd; font-size: 12px; text-align: center; }
+  .win-note.green { color: #34d399; }
+
+  /* ===== 数据条 ===== */
+  .stats { background: var(--bg-gray); padding: 70px 24px; }
+  .stats-grid { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; }
+  @media (max-width: 720px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 36px 16px; } }
+  .stat .num {
+    font-size: clamp(34px, 5vw, 52px); font-weight: 800; letter-spacing: -0.02em;
+    background: var(--grad);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .stat .label { color: var(--text-2); font-size: 14px; margin-top: 6px; }
+
+  /* ===== 通用 section ===== */
+  section { padding: 110px 24px; }
+  .sec-head { text-align: center; max-width: 760px; margin: 0 auto 64px; }
+  .sec-head h2 { font-size: clamp(38px, 5.6vw, 64px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .sec-head p { margin-top: 18px; font-size: clamp(16px, 2vw, 20px); color: var(--text-2); }
+  .dark .sec-head p { color: #a1a1a6; }
+
+  /* ===== 深色特性段 ===== */
+  .dark { background: #000; color: #f5f5f7; }
+  .features { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 760px) { .features { grid-template-columns: 1fr; } }
+  .feature {
+    background: #151517; border-radius: 26px; padding: 44px 40px;
+    transition: transform .4s cubic-bezier(.16,1,.3,1), background .4s;
+  }
+  .feature:hover { transform: translateY(-6px); background: #1c1c1f; }
+  .feature .icon {
+    width: 54px; height: 54px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; margin-bottom: 22px;
+    background: linear-gradient(135deg, rgba(52,211,153,.18), rgba(129,140,248,.18));
+  }
+  .feature h3 { font-size: 24px; font-weight: 700; margin-bottom: 12px; letter-spacing: -0.01em; }
+  .feature p { color: #a1a1a6; font-size: 15.5px; }
+  .feature .tag {
+    display: inline-block; margin-top: 16px;
+    font-size: 12px; color: #34d399;
+    border: 1px solid rgba(52, 211, 153, .35);
+    padding: 3px 12px; border-radius: 999px;
+  }
+
+  /* ===== 三步教程 ===== */
+  .steps { background: var(--bg-gray); }
+  .steps-grid { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 760px) { .steps-grid { grid-template-columns: 1fr; } }
+  .step { background: #fff; border-radius: 26px; padding: 40px 36px; box-shadow: 0 2px 14px rgba(0,0,0,.04); }
+  .step .n {
+    font-size: 15px; font-weight: 700; color: var(--blue);
+    background: rgba(0, 113, 227, .1);
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px;
+  }
+  .step h3 { font-size: 21px; font-weight: 700; margin-bottom: 10px; }
+  .step p { color: var(--text-2); font-size: 15px; }
+  .step .who { display: inline-block; margin-bottom: 16px; font-size: 12px; font-weight: 600; color: #0a7d54; background: rgba(52,211,153,.14); padding: 3px 12px; border-radius: 999px; }
+
+  /* ===== 下载区 ===== */
+  .download { text-align: center; background: var(--bg); }
+  .dl-card {
+    max-width: 680px; margin: 0 auto;
+    background: var(--bg-gray); border-radius: 30px;
+    padding: 56px 40px;
+  }
+  .dl-card .ver { font-size: 14px; color: var(--text-2); margin-bottom: 8px; }
+  .dl-card h3 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; }
+  .dl-card .desc { color: var(--text-2); margin: 14px 0 30px; font-size: 15.5px; }
+  .dl-req { margin-top: 26px; font-size: 13px; color: #86868b; }
+  .dl-req b { color: var(--text); font-weight: 600; }
+  .dl-alt { margin-top: 18px; font-size: 13px; }
+  .dl-alt a { color: var(--blue); }
+  .dl-alt a:hover { text-decoration: underline; }
+
+  /* ===== FAQ ===== */
+  .faq { background: var(--bg-gray); }
+  .faq-list { max-width: 760px; margin: 0 auto; }
+  details { background: #fff; border-radius: 18px; margin-bottom: 14px; padding: 22px 28px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+  summary { font-size: 17px; font-weight: 600; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font-size: 22px; color: #86868b; font-weight: 400; transition: transform .3s; }
+  details[open] summary::after { transform: rotate(45deg); }
+  details p { margin-top: 14px; color: var(--text-2); font-size: 15px; }
+
+  /* ===== 页脚 ===== */
+  footer { background: var(--bg-gray); border-top: 1px solid rgba(0,0,0,.08); padding: 46px 24px 60px; }
+  .foot-inner { max-width: 980px; margin: 0 auto; font-size: 13px; color: #86868b; }
+  .foot-inner .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; color: var(--text); font-weight: 700; font-size: 16px; }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 10px 26px; margin: 14px 0 22px; }
+  .foot-links a { color: var(--blue); }
+  .foot-links a:hover { text-decoration: underline; }
+  .foot-inner .legal { border-top: 1px solid rgba(0,0,0,.08); padding-top: 20px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+  /* ===== 滚动 reveal ===== */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s cubic-bezier(.16,1,.3,1), transform .8s cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 导航 -->
+<nav id="nav">
+  <a class="logo" href="#top">
+    <svg width="22" height="22" viewBox="0 0 64 64"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#lg)"/><text x="32" y="44" font-size="34" font-weight="800" text-anchor="middle" fill="#fff" font-family="system-ui">C</text></svg>
+    CLink
+  </a>
+  <a class="nav-item" href="#features">特性</a>
+  <a class="nav-item" href="#guide">教程</a>
+  <a class="nav-item" href="#faq">常见问题</a>
+  <a class="nav-item" href="https://github.com/ccdsyy/CLink" target="_blank" rel="noopener">GitHub</a>
+  <a class="nav-item nav-cta" href="https://github.com/ccdsyy/CLink/releases/latest/download/CLink.exe">下载</a>
+</nav>
+
+<!-- Hero -->
+<header class="hero" id="top">
+  <div class="eyebrow"><span class="dot"></span><span id="ver-badge">v0.9 Beta 现已发布</span></div>
+  <h1 class="hero-title">联机。<br><span class="grad">就这么简单。</span></h1>
+  <p class="sub">CLink 让 Minecraft 联机回归本质——一个 6 位房间码，朋友就能走进你的世界。无需公网 IP，无需端口映射，无需任何配置。</p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="https://github.com/ccdsyy/CLink/releases/latest/download/CLink.exe">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M6 11l6 6 6-6"/><path d="M4 21h16"/></svg>
+      下载 Windows 版
+    </a>
+    <a class="btn btn-ghost" href="https://github.com/ccdsyy/CLink" target="_blank" rel="noopener">
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      在 GitHub 上开源
+    </a>
+  </div>
+  <p class="meta"><b id="ver-meta">v0.9 Beta</b> · Windows 10/11 64 位 · 约 17.9 MB · 免费开源</p>
+</header>
+
+<!-- 应用展示 -->
+<div class="showcase">
+  <div class="window reveal">
+    <div class="win-bar">
+      <span class="l r"></span><span class="l y"></span><span class="l g"></span>
+      <span class="title">CLink · Minecraft 一键联机</span>
+    </div>
+    <div class="win-body">
+      <div class="win-card">
+        <h4>🏠 开房间（我是房主）</h4>
+        <div class="win-row">
+          <div class="win-input">25565</div>
+          <div class="win-btn">创建房间</div>
+        </div>
+        <div class="win-code">a b 3 d 7 k</div>
+        <div class="win-note green">✔ 房间码已复制，发给小伙伴就行</div>
+      </div>
+      <div class="win-card">
+        <h4>🎒 加入房间（我是客机）</h4>
+        <div class="win-row">
+          <div class="win-input">输入 6 位房间码…</div>
+          <div class="win-btn blue">一键加入</div>
+        </div>
+        <div class="win-code" style="letter-spacing:2px; font-size:15px; color:#60a5fa; border-color:rgba(96,165,250,.4)">127.0.0.1:25565</div>
+        <div class="win-note">连接成功！去游戏里直接连接粘贴即可</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 数据 -->
+<section class="stats" style="padding:70px 24px">
+  <div class="stats-grid">
+    <div class="stat reveal"><div class="num">0</div><div class="label">配置项。打开就用</div></div>
+    <div class="stat reveal"><div class="num">3</div><div class="label">层智能网络自动切换</div></div>
+    <div class="stat reveal"><div class="num">8.9亿</div><div class="label">房间码组合空间</div></div>
+    <div class="stat reveal"><div class="num">秒级</div><div class="label">端到端建联速度</div></div>
+  </div>
+</section>
+
+<!-- 特性（深色） -->
+<section class="dark" id="features">
+  <div class="sec-head reveal">
+    <h2>强大，<br>藏在幕后。</h2>
+    <p>你看到的只是一个按钮。按钮背后，是一整套为你扫清障碍的网络工程。</p>
+  </div>
+  <div class="features">
+    <div class="feature reveal">
+      <div class="icon">⚡</div>
+      <h3>三层智能网络</h3>
+      <p>双方支持 IPv6 时走极速直连；普通宽带自动 UDP 打洞；极端环境给出热点指引或自建中转。全程无需你选择，CLink 替你选最快的那条路。</p>
+      <span class="tag">IPv6 直连 · P2P 打洞 · 智能兜底</span>
+    </div>
+    <div class="feature reveal">
+      <div class="icon">🔒</div>
+      <h3>房间码就是钥匙</h3>
+      <p>所有信令以 AES-256-GCM 端到端加密，密钥由房间码派生——知道房间码，才是房间成员。信箱服务器只保管一个谁也打不开的保险箱。</p>
+      <span class="tag">端到端加密 · 零账号 · 零 Token</span>
+    </div>
+    <div class="feature reveal">
+      <div class="icon">🎮</div>
+      <h3>为小白而生</h3>
+      <p>自动识别游戏端口、自动复制房间码与连接地址、自动放行防火墙。每一步都有人话提示，全程看不见一个技术术语。</p>
+      <span class="tag">自动端口 · 自动复制 · 自动防火墙</span>
+    </div>
+    <div class="feature reveal">
+      <div class="icon">🛡️</div>
+      <h3>开源且透明</h3>
+      <p>MIT 许可证，源码完整公开。没有账号体系，没有上报，没有广告。欢迎审计每一行代码。</p>
+      <span class="tag">MIT · GitHub 开源</span>
+    </div>
+  </div>
+</section>
+
+<!-- 三步教程 -->
+<section class="steps" id="guide">
+  <div class="sec-head reveal">
+    <h2>三步，进入彼此的世界。</h2>
+    <p>从打开软件到进服联机，比泡一杯面还快。</p>
+  </div>
+  <div class="steps-grid">
+    <div class="step reveal">
+      <div class="who">房主</div>
+      <div class="n">1</div>
+      <h3>对局域网开放</h3>
+      <p>进入单人世界，按 Esc，点击「对局域网开放」。CLink 会自动识别端口，无需手填。</p>
+    </div>
+    <div class="step reveal">
+      <div class="who">房主</div>
+      <div class="n">2</div>
+      <h3>创建房间，发码</h3>
+      <p>点「创建房间」，6 位房间码自动复制。微信 QQ 随手发给小伙伴。</p>
+    </div>
+    <div class="step reveal">
+      <div class="who">小伙伴</div>
+      <div class="n">3</div>
+      <h3>一键加入，直接连接</h3>
+      <p>输入房间码点「一键加入」，连接地址已自动复制。游戏里「多人游戏 → 直接连接」粘贴即玩。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 下载 -->
+<section class="download" id="download">
+  <div class="sec-head reveal">
+    <h2>现在，开始联机。</h2>
+    <p>免费下载，无需安装，双击即用。</p>
+  </div>
+  <div class="dl-card reveal">
+    <p class="ver" id="dl-ver">CLink for Windows · v0.9 Beta</p>
+    <h3>Windows 版下载</h3>
+    <p class="desc">单文件绿色程序 · Windows 10 / 11（64 位）</p>
+    <a class="btn btn-primary" href="https://github.com/ccdsyy/CLink/releases/latest/download/CLink.exe">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M6 11l6 6 6-6"/><path d="M4 21h16"/></svg>
+      直接下载 CLink.exe
+    </a>
+    <p class="dl-req">校验与更新日志见 <b><a style="color:inherit" href="https://github.com/ccdsyy/CLink/releases" target="_blank" rel="noopener">Releases 页面</a></b></p>
+    <p class="dl-alt">下载慢？<a href="https://gofile.io/d/JIoIjBXv" target="_blank" rel="noopener">备用渠道</a> · 首次运行提示见 <a href="#faq">常见问题</a></p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq" id="faq">
+  <div class="sec-head reveal">
+    <h2>常见问题。</h2>
+  </div>
+  <div class="faq-list">
+    <details class="reveal">
+      <summary>下载后双击提示"Windows 保护了你的电脑"？</summary>
+      <p>这是未知发布者的常规提示（程序未购买代码签名证书）。点击「更多信息」→「仍要运行」即可。CLink 完全开源，不放心可自行审计源码或自行编译。</p>
+    </details>
+    <details class="reveal">
+      <summary>为什么要管理员权限？</summary>
+      <p>仅在首次创建房间时请求一次：用于自动添加 Windows 防火墙规则（只放行 CLink 程序与 25565 游戏端口）。加入房间不需要管理员权限。</p>
+    </details>
+    <details class="reveal">
+      <summary>安全吗？会被陌生人闯进房间吗？</summary>
+      <p>房间信令端到端加密（AES-256-GCM），房间码 6 位约 8.9 亿组合且 6 小时自动过期——知道房间码 = 是房间成员，如同知道密码 = 能进门。对陌生人，你的世界不存在。</p>
+    </details>
+    <details class="reveal">
+      <summary>连接失败 / 一直转圈怎么办？</summary>
+      <p>提示"网络环境复杂"时，让其中一方切换手机热点再试。技术玩家可在 CLink「高级设置」自填 TURN 中转服务器。仍有问题请加官方互助群 1108157805。</p>
+    </details>
+    <details class="reveal">
+      <summary>支持多少人同时联机？</summary>
+      <p>同一房间最多 31 位小伙伴依次加入（同时加入会自动排队）。支持正版与多数整合包启动器。</p>
+    </details>
+  </div>
+</section>
+
+<!-- 页脚 -->
+<footer>
+  <div class="foot-inner">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 64 64"><defs><linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#lg2)"/><text x="32" y="44" font-size="34" font-weight="800" text-anchor="middle" fill="#fff" font-family="system-ui">C</text></svg>
+      CLink
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/ccdsyy/CLink" target="_blank" rel="noopener">GitHub 源码</a>
+      <a href="https://github.com/ccdsyy/CLink/releases" target="_blank" rel="noopener">更新日志</a>
+      <a href="https://www.douyin.com/" target="_blank" rel="noopener">抖音教程：ccdsyyznb</a>
+      <a href="#faq">常见问题</a>
+    </div>
+    <p>视频教程 &amp; 更新动态：抖音号 <b style="color:var(--text)">ccdsyyznb</b> · 作者 QQ：<b style="color:var(--text)">3310339901</b> · 官方互助 QQ 群：<b style="color:var(--text)">1108157805</b></p>
+    <div class="legal" style="margin-top:20px">
+      <span>Copyright © 2026 ccdsyy. MIT License.</span>
+      <span>CLink 是免费开源工具，仅供学习交流 Minecraft 联机使用。</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 动态获取最新版本号（GitHub API，失败静默回退静态文案）
+  (function () {
+    var badge = document.getElementById('ver-badge');
+    var meta = document.getElementById('ver-meta');
+    var dl = document.getElementById('dl-ver');
+    fetch('https://api.github.com/repos/ccdsyy/CLink/releases/latest')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.name) return;
+        var v = d.name.replace(/^v/i, '');
+        badge.textContent = 'v' + v + ' 现已发布';
+        meta.textContent = 'v' + v;
+        dl.textContent = 'CLink for Windows · v' + v;
+      })
+      .catch(function () {});
+  })();
+
+  // 磨砂导航滚动加深
+  var nav = document.getElementById('nav');
+  addEventListener('scroll', function () {
+    nav.classList.toggle('scrolled', scrollY > 8);
+  }, { passive: true });
+
+  // 滚动 reveal
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+</script>
+</body>
+</html>
