@@ -8,89 +8,239 @@
 </head>
 <body>
 <div class="bg-glow"></div>
-<main>
-  <header>
-    <div class="logo">⛏️ CLink</div>
-    <div class="sub">Minecraft 一键联机 · 房间码就是全部</div>
-  </header>
 
-  <div class="cards">
-    <!-- 房主 -->
-    <section class="card" id="card-host">
-      <h2>🏠 开房间（我是房主）</h2>
-      <label for="mc-port">游戏端口（在游戏里“对局域网开放”后会自动填入，也可手动输入）</label>
-      <div class="row">
-        <input id="mc-port" type="text" inputmode="numeric" placeholder="25565" autocomplete="off">
-        <button id="btn-create" class="primary">创建房间</button>
-      </div>
-      <div class="status" id="host-status">先开单人世界 → Esc → 「对局域网开放」，再回来点「创建房间」</div>
-
-      <div class="room hidden" id="room-box">
-        <div class="label">房间码（已自动复制，发给小伙伴就行）</div>
-        <div class="code" id="room-code">· · · · · ·</div>
-        <button class="ghost small" id="btn-copy-code">再复制一次</button>
-        <div class="phase" id="host-phase">房间准备中…</div>
-        <div class="guests" id="host-guests"></div>
-      </div>
-    </section>
-
-    <!-- 客机 -->
-    <section class="card" id="card-guest">
-      <h2>🎒 加入房间（我是客机）</h2>
-      <label for="room-input">输入房主发来的 6 位房间码</label>
-      <div class="row">
-        <input id="room-input" maxlength="6" placeholder="如 ab3d7k" autocomplete="off" spellcheck="false">
-        <button id="btn-join" class="primary">一键加入</button>
-      </div>
-      <div class="status" id="guest-status">拿到房间码就可以加入啦</div>
-
-      <div class="room hidden" id="addr-box">
-        <div class="label">连接成功！下面的地址已复制</div>
-        <div class="code" id="addr">127.0.0.1:25565</div>
-        <div class="phase">打开游戏 → 多人游戏 → 直接连接 → 粘贴即可</div>
-        <button class="ghost small" id="btn-copy-addr">再复制一次</button>
-      </div>
-    </section>
+<!-- 自绘标题栏（无边框窗口） -->
+<header id="titlebar">
+  <div class="traffic">
+    <button class="tl close" id="tl-close" title="缩小到悬浮球"></button>
+    <button class="tl min" id="tl-min" title="最小化"></button>
+    <button class="tl ball" id="tl-ball" title="悬浮球模式">◉</button>
   </div>
+  <div class="tb-title">CLink</div>
+  <div class="tb-ver" id="tb-ver">v1.1</div>
+</header>
 
-  <div class="toolbar">
-    <button class="ghost hidden" id="btn-leave">🚪 退出联机</button>
-    <button class="ghost" id="btn-advanced">⚙ 高级设置</button>
+<!-- 侧栏导航 -->
+<nav id="sidenav">
+  <div class="nav-logo">C</div>
+  <button class="nav-btn active" data-view="home" title="联机">
+    <svg viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg><span>联机</span>
+  </button>
+  <button class="nav-btn" data-view="mods" title="模组仓库">
+    <svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.4 9 10 5.2-.6 9-5 9-10V6l-9-4zm0 6 3 1.5v3L12 14l-3-1.5v-3L12 8z"/></svg><span>模组</span>
+  </button>
+  <button class="nav-btn" data-view="tools" title="工具箱">
+    <svg viewBox="0 0 24 24"><path d="M22 19-8.2-8.2a6 6 0 0 0-7.8-7.8L9.6 6.4 6.4 9.6 3 6.2a6 6 0 0 0 7.8 7.8L19 22l3-3z"/></svg><span>工具</span>
+  </button>
+  <button class="nav-btn" data-view="settings" title="设置">
+    <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4a7 7 0 0 1-.1 1.2l2 1.6-2 3.4-2.4-1a7 7 0 0 1-2 1.2L16 21h-4l-.4-2.6a7 7 0 0 1-2-1.2l-2.5 1-2-3.4 2-1.6A7 7 0 0 1 7 12c0-.4 0-.8.1-1.2l-2-1.6 2-3.4 2.4 1a7 7 0 0 1 2-1.2L12 3h4l.4 2.6a7 7 0 0 1 2 1.2l2.5-1 2 3.4-2 1.6c.1.4.1.8.1 1.2z"/></svg><span>设置</span>
+  </button>
+</nav>
+
+<main id="content">
+  <!-- 更新横幅（收到 clink:update 事件显示） -->
+  <div id="update-bar" class="hidden">
+    <span>🚀 有新版本 <b id="upd-version"></b>：<span id="upd-notes"></span></span>
+    <a href="#" id="upd-link">去下载</a>
+    <button id="upd-close" title="忽略本次">×</button>
   </div>
+  <!-- ================= 主页：联机 ================= -->
+  <section class="view active" id="view-home">
+    <div class="cards">
+      <!-- 房主 -->
+      <div class="card" id="card-host">
+        <div class="card-head"><span class="card-ico green">🏠</span><div><h2>开房间</h2><p>你是房主，小伙伴来加入你</p></div></div>
+        <label class="lbl" for="mc-port">游戏端口（开「对局域网开放」后自动捕获）</label>
+        <div class="row">
+          <input id="mc-port" type="text" inputmode="numeric" placeholder="25565" autocomplete="off">
+          <button id="btn-create" class="btn primary">创建房间</button>
+        </div>
+        <div class="status" id="host-status">先开单人世界 → Esc →「对局域网开放」→ 回来点「创建房间」</div>
 
-  <section class="advanced hidden" id="advanced">
-    <h3>高级设置（一般不用管）</h3>
-    <div class="adv-grid">
-      <div class="adv-item">
-        <label>中转服务器 TURN（网络特别差时填写）</label>
-        <input id="adv-turn" type="text" placeholder="turn:服务器:端口 或 用户名:密码@turn:服务器:端口">
+        <div class="room hidden" id="room-box">
+          <div class="lbl">房间码（已自动复制，发给小伙伴）</div>
+          <div class="code-row">
+            <div class="code" id="room-code">· · · · · ·</div>
+            <button class="btn ghost sm" id="btn-copy-code">复制</button>
+          </div>
+          <div class="qr-wrap">
+            <img id="room-qr" alt="房间码二维码" title="小伙伴手机扫码即可获取房间码">
+            <span>手机扫码<br>获取房间码</span>
+          </div>
+          <div class="sms-invite">
+            <input id="invite-phone" type="tel" placeholder="朋友手机号（短信盒子直发邀请）" maxlength="15" autocomplete="off">
+            <button id="btn-sms-invite" class="btn ghost sm" title="通过你的短信盒子把房间码发给朋友">📱 短信邀请</button>
+          </div>
+          <div class="members-box">
+            <div class="lbl">在线成员 <span id="member-count">0</span> 人</div>
+            <ul id="member-list" class="member-list"><li class="muted">等待小伙伴加入…</li></ul>
+          </div>
+          <button id="btn-leave-host" class="btn danger">关闭房间</button>
+        </div>
       </div>
-      <div class="adv-item">
-        <label>游戏目录（自动找端口失败时手动指定 .minecraft 目录）</label>
-        <input id="adv-mcdir" type="text" placeholder="留空自动查找">
+
+      <!-- 客机 -->
+      <div class="card" id="card-guest">
+        <div class="card-head"><span class="card-ico blue">🎮</span><div><h2>加入房间</h2><p>拿到房间码就能进</p></div></div>
+        <label class="lbl" for="join-code">房间码（6 位，房主发你的）</label>
+        <div class="row">
+          <input id="join-code" class="code-input" type="text" maxlength="6" placeholder="· · · · · ·" autocomplete="off">
+          <button id="btn-join" class="btn primary">一键加入</button>
+        </div>
+        <div class="status" id="guest-status">加入成功后会自动复制服务器地址，进游戏直接连</div>
+
+        <div class="joined hidden" id="joined-box">
+          <div class="ok-line">✅ 已连上房主！</div>
+          <div class="addr-row">
+            <code id="local-addr">127.0.0.1:25565</code>
+            <button class="btn ghost sm" id="btn-copy-addr">复制</button>
+          </div>
+          <div class="steps">多人游戏 → 直接连接 → 粘贴地址 → 加入</div>
+          <button id="btn-leave-guest" class="btn danger">退出联机</button>
+        </div>
       </div>
-      <div class="adv-item">
-        <label>信箱服务（一般不用改）</label>
-        <input id="adv-mailbox" type="text" placeholder="https://paste.sdjz.wiki">
-      </div>
-    </div>
-    <div class="adv-actions">
-      <button class="ghost small" id="btn-save-adv">保存</button>
-      <button class="ghost small" id="btn-netcheck">网络体检</button>
-      <span class="netcheck-result" id="netcheck-result"></span>
     </div>
   </section>
 
-  <footer>
-    <div class="foot-line">CLink · 开源免费 · 把复杂留给机器，把快乐留给你</div>
-    <div class="links">
-      <a href="https://ccdsyy.github.io" target="_blank" rel="noopener">官网 &amp; 开源地址：ccdsyy.github.io</a>
-      <span>视频教程 &amp; 更新动态：抖音号 <b>ccdsyyznb</b></span>
-      <span>作者 QQ：<b>3310339901</b></span>
-      <span>官方互助 QQ 群：<b>1108157805</b>（加群交流/反馈问题）</span>
+  <!-- ================= 模组仓库 ================= -->
+  <section class="view" id="view-mods">
+    <div class="search-bar">
+      <input id="mod-query" type="text" placeholder="搜索模组，如：JEI、Create、Xaero…" autocomplete="off">
+      <select id="mod-gv"><option value="">版本</option></select>
+      <select id="mod-loader"><option value="">加载器</option><option value="fabric">Fabric</option><option value="forge">Forge</option><option value="quilt">Quilt</option><option value="neo forged">NeoForge</option></select>
+      <button id="btn-mod-search" class="btn primary">搜索</button>
     </div>
-  </footer>
+    <div class="dl-target">
+      下载到：<code id="mods-dir-label">（在设置里配置 MC 目录后自动填入）</code>
+      <button class="btn ghost sm" id="btn-pick-dir">选择文件夹</button>
+    </div>
+    <div id="mod-results" class="mod-results"><div class="empty">搜一个模组试试，比如 JEI</div></div>
+
+    <div class="queue-box hidden" id="queue-box">
+      <div class="lbl">下载队列（多线程加速 · 断点续传）</div>
+      <ul id="queue-list" class="queue-list"></ul>
+    </div>
+  </section>
+
+  <!-- ================= 工具箱 ================= -->
+  <section class="view" id="view-tools">
+    <div class="tool-grid">
+      <div class="card tool">
+        <h3>🌐 我的网络</h3>
+        <p class="muted">看自己的出口 IP 和归属地</p>
+        <button id="btn-ip" class="btn primary sm">查询本机 IP</button>
+        <div class="tool-out" id="ip-out"></div>
+      </div>
+      <div class="card tool">
+        <h3>📡 MC 服务器状态</h3>
+        <p class="muted">查任意 Java 版服务器在不在线</p>
+        <div class="row">
+          <input id="mc-addr" type="text" placeholder="mc.hypixel.net" autocomplete="off">
+          <button id="btn-mcstatus" class="btn primary sm">查询</button>
+        </div>
+        <div class="tool-out" id="mcstatus-out"></div>
+      </div>
+      <div class="card tool">
+        <h3>🔲 二维码生成</h3>
+        <p class="muted">文字秒变二维码（发房间码、链接都行）</p>
+        <div class="row">
+          <input id="qr-text" type="text" placeholder="输入文字或链接" autocomplete="off">
+          <button id="btn-qr" class="btn primary sm">生成</button>
+        </div>
+        <div class="qr-preview"><img id="qr-img" class="hidden" alt="二维码"></div>
+      </div>
+      <div class="card tool">
+        <h3>🖼️ 必应每日壁纸</h3>
+        <p class="muted">今天的全球精选美图</p>
+        <button id="btn-bing" class="btn primary sm">换一张</button>
+        <div class="bing-wrap"><img id="bing-img" class="hidden" alt="今日壁纸"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 设置 ================= -->
+  <section class="view" id="view-settings">
+    <div class="card set-card">
+      <h3>个人资料</h3>
+      <div class="row">
+        <input id="set-name" type="text" placeholder="你的昵称（进房显示）" maxlength="16" autocomplete="off">
+        <label class="switch-row"><input type="checkbox" id="set-notify" checked><span>加入时弹 Windows 通知（悬浮球/最小化时）</span></label>
+      </div>
+      <button id="btn-save-profile" class="btn primary sm">保存</button>
+    </div>
+
+    <div class="card set-card">
+      <h3>黑名单防骚扰</h3>
+      <p class="muted">被拉黑的玩家无法再加入你的房间（跨开房生效）</p>
+      <div class="row">
+        <input id="bl-name" type="text" placeholder="玩家昵称" maxlength="16" autocomplete="off">
+        <button id="btn-bl-add" class="btn danger sm">拉黑</button>
+      </div>
+      <ul id="bl-list" class="bl-list"></ul>
+    </div>
+
+    <div class="card set-card">
+      <h3>网络诊断</h3>
+      <button id="btn-probe" class="btn primary sm">开始诊断</button>
+      <div class="tool-out" id="probe-out"></div>
+    </div>
+
+    <div class="card set-card">
+      <h3>高级设置</h3>
+      <label class="lbl" for="set-mcdir">MC 目录（.minecraft 所在路径，用于模组下载）</label>
+      <input id="set-mcdir" type="text" placeholder="C:\Users\你\AppData\Roaming\.minecraft" autocomplete="off">
+      <label class="lbl" for="set-turn">TURN 中继（可选，逗号分隔）</label>
+      <input id="set-turn" type="text" placeholder="user:pass@turn:host:port" autocomplete="off">
+      <label class="lbl" for="set-mailbox">信箱服务地址（可选）</label>
+      <input id="set-mailbox" type="text" placeholder="默认公共信箱" autocomplete="off">
+      <button id="btn-save-adv" class="btn primary sm">保存</button>
+    </div>
+
+    <div class="card set-card">
+      <h3>📮 短信盒子（手机短信提醒）</h3>
+      <p class="set-hint">搭配你部署的短信盒子 APP：有人加入 / 黑名单拦截时，手机直接收短信——人不在电脑前也不错过。仅走你自己的手机卡，无任何第三方。</p>
+      <label class="lbl" for="sms-url">盒子地址（APP 首页显示，如 http://192.168.1.5:8080）</label>
+      <input id="sms-url" type="text" placeholder="http://192.168.1.5:8080" autocomplete="off">
+      <label class="lbl" for="sms-pin">访问口令 PIN（APP 里设置了才填）</label>
+      <input id="sms-pin" type="password" placeholder="留空 = 未设置" autocomplete="off">
+      <label class="lbl" for="sms-phone">接收提醒的手机号（通常是你自己的）</label>
+      <input id="sms-phone" type="tel" placeholder="13800138000" maxlength="15" autocomplete="off">
+      <label class="switch-row"><input type="checkbox" id="sms-join" checked><span>有人加入时发短信提醒</span></label>
+      <label class="switch-row"><input type="checkbox" id="sms-reject" checked><span>拦截黑名单时发短信提醒</span></label>
+      <div class="row">
+        <button id="btn-sms-ping" class="btn ghost sm">测试连接</button>
+        <button id="btn-sms-test" class="btn ghost sm">发一条测试短信</button>
+        <button id="btn-sms-save" class="btn primary sm">保存</button>
+      </div>
+      <div class="tool-out" id="sms-out"></div>
+    </div>
+
+    <div class="card set-card">
+      <h3>软件更新</h3>
+      <div class="update-row">
+        <span class="upd-state" id="upd-state">当前版本 <b id="cur-version">v1.1.0</b>（发布编号 <b id="cur-build">2</b>）</span>
+        <button id="btn-check-update" class="btn primary sm">立即检查更新</button>
+      </div>
+      <div class="tool-out" id="check-out"></div>
+    </div>
+
+    <div class="about">CLink v1.1 · 开源免费 · clink.541887.xyz · github.com/ccdsyy/CLink<br>遇到问题加互助群：1108157805</div>
+  </section>
 </main>
+
+<!-- 悬浮球 -->
+<div id="ball" class="hidden">
+  <div class="orb" id="orb">
+    <div class="orb-face">C</div>
+    <div class="orb-badge hidden" id="orb-badge">0</div>
+  </div>
+  <div class="ball-menu hidden" id="ball-menu">
+    <button id="ball-restore">恢复窗口</button>
+    <button id="ball-quit" class="danger">退出 CLink</button>
+  </div>
+</div>
+
+<div id="toasts"></div>
 <script src="app.js"></script>
 </body>
 </html>
