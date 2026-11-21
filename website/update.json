@@ -1,8 +1,8 @@
 {
-  "version": "1.2.0",
-  "build": 3,
-  "notes": "接入短信盒子：有人加入/拦截黑名单手机收短信提醒、短信一键邀请好友（防轰炸限流）",
-  "date": "2026-09-27",
+  "version": "1.3.0",
+  "build": 4,
+  "notes": "信令服务器多节点自动容灾（剪贴板服务1 → UAPI）、STUN/TURN 节点可选、连接延迟显示、最近房间一键重连、房主掉线感知、多项稳定性修复",
+  "date": "2026-11-21",
   "download": "https://github.com/ccdsyy/CLink/releases/latest/download/CLink.exe",
   "page": "https://clink.541887.xyz"
 }

@@ -40,8 +40,8 @@ footer a{color:var(--green);text-decoration:none}
 <section class="hero">
   <div class="logo">⛏️ CL<em>ink</em></div>
   <div class="tag">Minecraft 一键联机 · 没有公网 IP 也照玩 · 房间码就是全部</div>
-  <a class="btn" href="https://github.com/ccdsyy/clink/releases" target="_blank" rel="noopener">下载 CLink（Windows）</a>
-  <div style="margin-top:18px"><span class="chip">IPv6 直连</span><span class="chip">P2P 打洞</span><span class="chip">端到端加密</span><span class="chip">开源免费</span></div>
+  <a class="btn" href="https://github.com/ccdsyy/CLink/releases/latest/download/CLink.exe" target="_blank" rel="noopener">下载 CLink v1.3.0（Windows）</a>
+  <div style="margin-top:18px"><span class="chip">IPv6 直连</span><span class="chip">P2P 打洞</span><span class="chip">信令多节点容灾</span><span class="chip">延迟显示</span><span class="chip">端到端加密</span><span class="chip">开源免费</span></div>
 </section>
 
 <section class="steps">
@@ -63,8 +63,9 @@ footer a{color:var(--green);text-decoration:none}
 <section class="faq">
   <h2>常见问题</h2>
   <details open><summary>安全吗？会被陌生人闯进来吗？</summary><p>房间信件端到端加密（AES-256-GCM），信箱服务器也看不到内容；6 位码约 8.9 亿组合，房间 6 小时自动过期。知道房间码 = 是房间成员，如同知道密码 = 能进门。</p></details>
-  <details><summary>连不上怎么办？</summary><p>提示"网络环境复杂"时，让一方切换手机热点再试。技术党可在高级设置自建 TURN 中转。</p></details>
+  <details><summary>连不上怎么办？</summary><p>提示"网络环境复杂"时，让一方切换手机热点再试。也可以在「设置 → 网络与信令」里更换信令服务器 / STUN 节点，或勾选公共 TURN 中继（推荐有服务器的同学自建 coturn）。</p></details>
   <details><summary>支持多少人？</summary><p>同一房间最多 31 位小伙伴依次加入。</p></details>
+  <details><summary>v1.3.0 更新了什么？</summary><p>信令服务器多节点自动容灾（剪贴板服务1 → UAPI）、STUN/TURN 节点可选、连接延迟实时显示、最近房间一键重连、房主掉线感知，并修复多处稳定性问题。</p></details>
 </section>
 
 <footer>

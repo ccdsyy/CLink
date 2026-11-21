@@ -19,6 +19,37 @@ export namespace blacklist {
 
 }
 
+export namespace main {
+	
+	export class NetCfg {
+	    node: string;
+	    mailbox: string;
+	    stunMode: string;
+	    stun: string;
+	    turnNodes: string[];
+	    turn: string;
+	    localPort: number;
+	    mcDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NetCfg(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.node = source["node"];
+	        this.mailbox = source["mailbox"];
+	        this.stunMode = source["stunMode"];
+	        this.stun = source["stun"];
+	        this.turnNodes = source["turnNodes"];
+	        this.turn = source["turn"];
+	        this.localPort = source["localPort"];
+	        this.mcDir = source["mcDir"];
+	    }
+	}
+
+}
+
 export namespace modhub {
 	
 	export class ModResult {
@@ -215,34 +246,3 @@ export namespace updater {
 
 }
 
-
-export namespace main {
-	
-	export class NetCfg {
-	    node: string;
-	    mailbox: string;
-	    stunMode: string;
-	    stun: string;
-	    turnNodes: Array<string>;
-	    turn: string;
-	    localPort: number;
-	    mcDir: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new NetCfg(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.node = source["node"];
-	        this.mailbox = source["mailbox"];
-	        this.stunMode = source["stunMode"];
-	        this.stun = source["stun"];
-	        this.turnNodes = source["turnNodes"];
-	        this.turn = source["turn"];
-	        this.localPort = source["localPort"];
-	        this.mcDir = source["mcDir"];
-	    }
-	}
-
-}
