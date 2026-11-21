@@ -84,3 +84,71 @@
 
 ccdsyy.github.io / 抖音 ccdsyyznb / QQ 3310339901 / 群 1108157805
 
+
+---
+
+## 2026-11-21 · v1.3：信令服务器选项 + STUN/TURN 多节点 + bug 修复 + P2P 体验对齐
+
+### 用户指令
+
+删掉意义不明的功能；加入信令服务器选项（剪贴板服务1 / UAPI剪贴板服务 / 公共 STUN 和 TURN 多节点）；修 bug；模仿其他成功的 P2P 应用；功能越多越好。
+
+### 实测侦察（本机 = 中国电信 CGNAT 网络）
+
+- paste.sdjz.wiki（剪贴板服务1）：store/shorten/redirect-info 全部可用 ✅
+- uapis.cn/api/v1（UAPI剪贴板服务）：OpenAPI 声明了 Clipzy 端点但网关未路由
+  （404 `API endpoint not found`，与 2026-09 结论一致）→ 保留为容灾备节点
+- STUN 探测 RTT：小米 83ms < Cloudflare 187ms < Google ~200ms < Nextcloud 206ms
+- TURN：OpenRelay 全端口超时（已死）；ExpressTurn 对 Binding 有响应但 Allocate 无回包
+- **关键对照实验**：ICE 多 STUN 节点并发候选在 CGNAT 下失灵
+  （5 节点 3/3 失败；Google 单节点 4/4 稳过）→ 采纳"多节点探测选优 + ICE 单节点"
+
+### 功能新增
+
+| 功能 | 实现 |
+|------|------|
+| 信令服务器选项 | 设置页下拉：自动容灾 / 剪贴板服务1 / UAPI剪贴板 / 自定义；`mailbox.Client` 多节点轮换 + 网关 404 与业务 404 区分 |
+| STUN 多节点 | `netprobe.PickSTUN()` Google 首选探测选优（缓存 10 分钟）；设置页可指定具名节点或自定义列表 |
+| TURN 多节点 | 预设节点复选框 + 自定义列表叠加；可靠性如实标注 |
+| 连接质量徽标 | 客机心跳 pong 回显时间戳测 RTT，连接成功显示"方式 · 延迟" |
+| 最近房间 | 最近 8 个房间码（房主+客机都记），一键回填重连 |
+| 房主掉线感知 | WebRTC 成员断线 → 移出成员表 + `guest-left` 事件 + 系统通知 |
+| 自定义本地端口 | 客机 25565 被占用/自开服时可改（设置页） |
+| 一键复制邀请文案 | playit.gg 式：房间码 + 下载链接一条消息直接发朋友 |
+| 网络体检增强 | 显示命中的 STUN 节点与 RTT；修复 IPv6 判断字段错位（读 `hasV6` 而非不存在的 `ipv6`） |
+
+### Bug 修复
+
+1. **Offer 槽位毒化死循环**：房间码注册撞"已被使用"后原地重试永远失败 → 改为轮转下一 epoch
+2. **打洞超时僵尸端点**：45s 超时未回收 pc、成员表残留 → 回收 + 清理
+3. **加入按钮卡死**：异步错误（房间不存在等）后按钮永远禁用 → `error` 事件恢复按钮
+4. **关窗误清剪贴板**：OnBeforeClose 进入悬浮球时把用户剪贴板清空 → 移除
+5. **NeoForge 永远搜不到**：加载器 value 误为 `neo forged`（Modrinth slug 是 `neoforge`）
+6. **网络体检 IPv6 永远显示不支持**：前端读 `r.ipv6` 但 JSON 字段是 `hasV6`
+7. **Google STUN 唯一默认无容灾**：国内部分 ISP UDP 不通即完全无 srflx → 多节点选优兜底
+8. **Kick 不减人数 / 人数漂移**：Guests() 改为以成员表为准；同名重连旧监控误报掉线 → 端点身份校验
+9. **版本号各处不一致**：v1.1 硬编码（标题栏/关于/wails.json）→ 全部对齐 v1.3.0，标题栏运行时取值
+10. **心跳 RTT**：顺带支持 pong 回显测延迟（见新功能）
+
+### 删减
+
+- 移除「必应每日壁纸」工具（与联机工具定位无关，意义不明项）
+
+### 其他
+
+- 全仓 gofmt 规范化（原上传代码未格式化）
+- 手工同步 wailsjs 绑定（App.d.ts / App.js / models.ts）：GetNet/SetNet/PresetNodes/RecentRooms 替代 GetAdvanced/SetAdvanced/TbBing
+- 版本 v1.3.0（AppBuild=4）；website/update.json 未动（发布时再 bump，避免指向不存在的 exe）
+
+### 验证
+
+- go build / go vet 全绿
+- 单测：blacklist / mailbox（含真网端到端）/ modhub / smsbox / updater / v6direct 全过
+- session 真网全流程：信令注册 + 扫槽 + Answer + ctrl 打通 ✅（本沙箱 UDP 数据通道随会话时长退化，
+  同配置原代码同样复现，判为环境噪声；真机需复测——见遗留事项）
+
+### 遗留事项
+
+- [ ] 真机双 NAT 联调 v1.3（重点复测：多节点选优 / TURN 勾选 / RTT 展示）
+- [ ] UAPI 网关恢复 Clipzy 路由后复测容灾切换
+- [ ] ExpressTurn 正确凭据调研（当前 free:free 不被 Allocate 接受）

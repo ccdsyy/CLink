@@ -1,6 +1,6 @@
 // Package toolbox 基于 UAPI（uapis.cn）的实用工具箱。
 //
-// 能力：IP 归属地查询、房间码二维码生成、BING 每日壁纸、
+// 能力：IP 归属地查询、房间码二维码生成、
 // Minecraft 服务器状态查询。全部走公开免费接口，无需鉴权。
 package toolbox
 
@@ -80,34 +80,10 @@ func (t *Client) QRCodeDataURL(text string, size int) (string, error) {
 	return buf.String(), nil
 }
 
-// BingWallpaper 返回 BING 每日壁纸（WEBP 字节）与日期。
-func (t *Client) BingWallpaper() ([]byte, error) {
-	r, err := t.c.Image().GetImageBingDaily(map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-	if b, ok := r.([]byte); ok && len(b) > 0 {
-		return b, nil
-	}
-	return nil, fmt.Errorf("壁纸返回为空")
-}
-
-// BingWallpaperDataURL BING 壁纸 data URL（前端 img 直接用）。
-func (t *Client) BingWallpaperDataURL() (string, error) {
-	b, err := t.BingWallpaper()
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	buf.WriteString("data:image/webp;base64,")
-	buf.WriteString(base64.StdEncoding.EncodeToString(b))
-	return buf.String(), nil
-}
-
 // MCServerStatus Minecraft 服务器状态（motd/在线人数/版本）。
 type MCServerStatus struct {
 	Online    bool   `json:"online"`
-	Players   string `json:"players"`  // "12/100"
+	Players   string `json:"players"` // "12/100"
 	MOTD      string `json:"motd"`
 	Version   string `json:"version"`
 	LatencyMS int64  `json:"latency_ms"`

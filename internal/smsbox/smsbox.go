@@ -23,18 +23,18 @@ import (
 )
 
 const (
-	pingTimeout   = 3 * time.Second
-	sendTimeout   = 8 * time.Second
-	debounce      = 60 * time.Second // 同 key 去抖窗口
-	hourlyMax     = 20               // 每小时全局上限
+	pingTimeout = 3 * time.Second
+	sendTimeout = 8 * time.Second
+	debounce    = 60 * time.Second // 同 key 去抖窗口
+	hourlyMax   = 20               // 每小时全局上限
 )
 
 // Client 短信盒子客户端（线程安全）。
 type Client struct {
-	mu   sync.RWMutex
-	url  string // 形如 http://192.168.1.5:8080（不带尾部斜杠）
-	pin  string
-	hc   *http.Client
+	mu  sync.RWMutex
+	url string // 形如 http://192.168.1.5:8080（不带尾部斜杠）
+	pin string
+	hc  *http.Client
 }
 
 // New 创建客户端。url 为盒子根地址（含端口），pin 可为空。

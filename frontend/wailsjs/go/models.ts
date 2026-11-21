@@ -117,6 +117,8 @@ export namespace netprobe {
 	    publicAddr: string;
 	    natType: string;
 	    tier: string;
+	    stunNode: string;
+	    rttMs: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Report(source);
@@ -130,6 +132,8 @@ export namespace netprobe {
 	        this.publicAddr = source["publicAddr"];
 	        this.natType = source["natType"];
 	        this.tier = source["tier"];
+	        this.stunNode = source["stunNode"];
+	        this.rttMs = source["rttMs"];
 	    }
 	}
 
@@ -211,3 +215,34 @@ export namespace updater {
 
 }
 
+
+export namespace main {
+	
+	export class NetCfg {
+	    node: string;
+	    mailbox: string;
+	    stunMode: string;
+	    stun: string;
+	    turnNodes: Array<string>;
+	    turn: string;
+	    localPort: number;
+	    mcDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NetCfg(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.node = source["node"];
+	        this.mailbox = source["mailbox"];
+	        this.stunMode = source["stunMode"];
+	        this.stun = source["stun"];
+	        this.turnNodes = source["turnNodes"];
+	        this.turn = source["turn"];
+	        this.localPort = source["localPort"];
+	        this.mcDir = source["mcDir"];
+	    }
+	}
+
+}

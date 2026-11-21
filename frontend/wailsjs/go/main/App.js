@@ -38,8 +38,8 @@ export function ExitBallMode() {
   return window['go']['main']['App']['ExitBallMode']();
 }
 
-export function GetAdvanced() {
-  return window['go']['main']['App']['GetAdvanced']();
+export function GetNet() {
+  return window['go']['main']['App']['GetNet']();
 }
 
 export function JoinRoom(arg1, arg2) {
@@ -90,12 +90,20 @@ export function OpenFolder(arg1) {
   return window['go']['main']['App']['OpenFolder'](arg1);
 }
 
+export function PresetNodes() {
+  return window['go']['main']['App']['PresetNodes']();
+}
+
 export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }
 
-export function SetAdvanced(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SetAdvanced'](arg1, arg2, arg3);
+export function RecentRooms() {
+  return window['go']['main']['App']['RecentRooms']();
+}
+
+export function SetNet(arg1) {
+  return window['go']['main']['App']['SetNet'](arg1);
 }
 
 export function SetProfile(arg1, arg2) {
@@ -128,10 +136,6 @@ export function StartLogWatch() {
 
 export function Status() {
   return window['go']['main']['App']['Status']();
-}
-
-export function TbBing() {
-  return window['go']['main']['App']['TbBing']();
 }
 
 export function TbMCStatus(arg1) {

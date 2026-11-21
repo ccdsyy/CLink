@@ -27,15 +27,15 @@ type Update struct {
 
 // UpdateInfo 推给 UI 的检查结果。
 type UpdateInfo struct {
-	CurrentVersion string  `json:"currentVersion"`
-	LatestVersion  string  `json:"latestVersion"`
-	CurrentBuild   int     `json:"currentBuild"`
-	LatestBuild    int     `json:"latestBuild"`
-	Notes          string  `json:"notes"`
-	Download       string  `json:"download"`
-	Page           string  `json:"page"`
-	HasUpdate      bool    `json:"hasUpdate"`
-	FetchedAt      string  `json:"fetchedAt"`
+	CurrentVersion string `json:"currentVersion"`
+	LatestVersion  string `json:"latestVersion"`
+	CurrentBuild   int    `json:"currentBuild"`
+	LatestBuild    int    `json:"latestBuild"`
+	Notes          string `json:"notes"`
+	Download       string `json:"download"`
+	Page           string `json:"page"`
+	HasUpdate      bool   `json:"hasUpdate"`
+	FetchedAt      string `json:"fetchedAt"`
 }
 
 // DefaultURLs 更新源：主域名 + GitHub raw 备份。

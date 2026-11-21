@@ -6,6 +6,7 @@ import {modhub} from '../models';
 import {netprobe} from '../models';
 import {context} from '../models';
 import {toolbox} from '../models';
+import {main} from '../models';
 
 export function BlAdd(arg1:string):Promise<void>;
 
@@ -25,7 +26,7 @@ export function EnterBallMode():Promise<void>;
 
 export function ExitBallMode():Promise<void>;
 
-export function GetAdvanced():Promise<Record<string, string>>;
+export function GetNet():Promise<main.NetCfg>;
 
 export function JoinRoom(arg1:string,arg2:string):Promise<void>;
 
@@ -51,9 +52,13 @@ export function OnBeforeClose(arg1:context.Context):Promise<boolean>;
 
 export function OpenFolder(arg1:string):Promise<void>;
 
+export function PresetNodes():Promise<Record<string, any>>;
+
 export function QuitApp():Promise<void>;
 
-export function SetAdvanced(arg1:string,arg2:string,arg3:string):Promise<void>;
+export function RecentRooms():Promise<Array<string>>;
+
+export function SetNet(arg1:main.NetCfg):Promise<void>;
 
 export function SetProfile(arg1:string,arg2:boolean):Promise<void>;
 
@@ -70,8 +75,6 @@ export function SmsTest(arg1:string):Promise<void>;
 export function StartLogWatch():Promise<void>;
 
 export function Status():Promise<Record<string, any>>;
-
-export function TbBing():Promise<string>;
 
 export function TbMCStatus(arg1:string):Promise<toolbox.MCServerStatus>;
 

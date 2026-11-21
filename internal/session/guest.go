@@ -48,7 +48,8 @@ func StartGuest(ctx context.Context, cfg GuestConfig, emit func(Event)) (*Guest,
 		cfg.Mailbox = mailbox.NewClient("")
 	}
 	if len(cfg.STUN) == 0 {
-		cfg.STUN = []string{"stun:stun.l.google.com:19302"}
+		// 多节点探测选优，ICE 只挂最优单节点（多候选在 CGNAT 环境实测易失灵）
+		cfg.STUN = []string{netprobe.PickSTUN()}
 	}
 	if cfg.LocalPort <= 0 {
 		cfg.LocalPort = 25565
@@ -118,7 +119,9 @@ func (g *Guest) attempt(lastErr string) error {
 	// 2. Tier 1：IPv6 直连（双方都有公网 v6 时）
 	if sig.V6 != "" && netprobe.HasIPv6Route() {
 		v6addr := net.JoinHostPort(sig.V6, strconv.Itoa(sig.V6Port))
+		dialStart := time.Now()
 		if conn, derr := net.DialTimeout("tcp6", v6addr, 3*time.Second); derr == nil {
+			rtt := time.Since(dialStart).Milliseconds()
 			_ = conn.Close()
 			// 注册 Answer（通知房主 + 占槽防并发冲突）
 			if rerr := g.registerAnswer(epoch, "ipv6", "", ""); rerr != nil {
@@ -129,12 +132,12 @@ func (g *Guest) attempt(lastErr string) error {
 			}
 			v6g, serr := v6direct.StartGuest(g.ctx, sig.V6, sig.V6Port, localPort)
 			if serr != nil {
-				return fmt.Errorf("本地端口 25565 被占用？%v", serr)
+				return fmt.Errorf("本地端口 %d 被占用？%v", localPort, serr)
 			}
 			g.mu.Lock()
 			g.tier, g.addr = "ipv6", "127.0.0.1:"+strconv.Itoa(v6g.LocalPort())
 			g.mu.Unlock()
-			g.emit(Event{Stage: "connected", Tier: "ipv6", Addr: g.addr,
+			g.emit(Event{Stage: "connected", Tier: "ipv6", Addr: g.addr, RTT: rtt,
 				Msg: "连接成功（IPv6 极速直连）！"})
 			<-g.ctx.Done()
 			return nil
@@ -177,12 +180,12 @@ func (g *Guest) attempt(lastErr string) error {
 
 	if err := pc.ServeLocal(g.ctx, localPort); err != nil {
 		pc.Stop()
-		return fmt.Errorf("本地端口 25565 被占用？%v", err)
+		return fmt.Errorf("本地端口 %d 被占用？%v", localPort, err)
 	}
 	g.mu.Lock()
 	g.tier, g.addr = "webrtc", "127.0.0.1:"+strconv.Itoa(pc.LocalPort())
 	g.mu.Unlock()
-	g.emit(Event{Stage: "connected", Tier: "webrtc", Addr: g.addr,
+	g.emit(Event{Stage: "connected", Tier: "webrtc", Addr: g.addr, RTT: pc.RTT(),
 		Msg: "连接成功（P2P 打洞）！"})
 	g.emit(Event{Stage: "info", Msg: "打开游戏 → 多人游戏 → 直接连接 → 粘贴 " + g.addr})
 

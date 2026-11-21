@@ -38,7 +38,24 @@ const (
 
 	// GitHubPagesRedirect 短链指向的中转页（Clipzy 要求合法 http(s) URL）
 	GitHubPagesRedirect = "https://ccdsyy.github.io/r/"
+
+	// ---- 信令节点预设（可在设置页选择；详见 PROTOCOL.md §2）----
+	// EndpointClip1 剪贴板服务1：Clipzy 后端直连（默认主节点，2026-11-21 实测可用）
+	EndpointClip1 = "https://paste.sdjz.wiki"
+	// EndpointUAPI UAPI 剪贴板服务：uapis.cn 网关（OpenAPI 已声明 Clipzy 端点，
+	// 2026-11-21 实测网关未路由；作为容灾备节点保留，恢复后自动生效）
+	EndpointUAPI = "https://uapis.cn/api/v1"
 )
+
+// PresetEndpoints 信令节点预设展示名 → Base URL（设置页下拉框数据源）。
+var PresetEndpoints = []struct {
+	Name string `json:"name"`
+	Base string `json:"base"`
+	Desc string `json:"desc"`
+}{
+	{"剪贴板服务1", EndpointClip1, "默认主节点（实测可用）"},
+	{"UAPI剪贴板服务", EndpointUAPI, "uapis.cn 网关（容灾备节点）"},
+}
 
 // Alphabet 防混淆字符表：小写字母+数字，去掉 0/1/i/l/o，
 // 与 Clipzy customCode 校验规则严格对齐（实测：含这些字符直接 400）。
@@ -49,13 +66,13 @@ var ErrInvalidRoomCode = errors.New("房间码格式不正确（6 位，不含 0
 
 // Signal 信令载荷：信箱中传输的明文结构（上链前加密）。
 type Signal struct {
-	V       int    `json:"v"`                // 协议版本
-	Type    string `json:"type"`             // "offer" | "answer"
-	Epoch   int    `json:"epoch"`            // 房间轮次（每完成一人加入 +1，兼容重连）
-	Tier    string `json:"tier"`             // "ipv6" | "webrtc" | "dual"
-	Nonce   string `json:"nonce"`            // 随机数，防重放
-	Ts      int64  `json:"ts"`               // 签发时间（Unix 秒）
-	SDP     string `json:"sdp,omitempty"`    // WebRTC SDP
+	V       int    `json:"v"`             // 协议版本
+	Type    string `json:"type"`          // "offer" | "answer"
+	Epoch   int    `json:"epoch"`         // 房间轮次（每完成一人加入 +1，兼容重连）
+	Tier    string `json:"tier"`          // "ipv6" | "webrtc" | "dual"
+	Nonce   string `json:"nonce"`         // 随机数，防重放
+	Ts      int64  `json:"ts"`            // 签发时间（Unix 秒）
+	SDP     string `json:"sdp,omitempty"` // WebRTC SDP
 	SDPType string `json:"sdpType,omitempty"`
 	V6      string `json:"v6,omitempty"`     // 房主公网 IPv6
 	V6Port  int    `json:"v6Port,omitempty"` // 房主 IPv6 监听端口

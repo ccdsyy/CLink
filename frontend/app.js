@@ -1,4 +1,4 @@
-// CLink v1.1 前端交互（苹果风深色 UI · 悬浮球 · 模组仓库 · 工具箱）
+// CLink v1.3 前端交互（苹果风深色 UI · 悬浮球 · 模组仓库 · 工具箱 · 信令节点选择）
 /* global window, document */
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -18,9 +18,9 @@
 
   // ---- 通用 ----
   let busy = false;
-  let guests = 0;
   let ballMode = false;
   let currentView = "home";
+  let currentRoomCode = "";
 
   const fmtBytes = (n) => {
     if (n == null || n < 0) return "?";
@@ -93,6 +93,7 @@
     setStatus("host-status", "正在创建房间…");
     try {
       const code = await call("CreateRoom", port);
+      currentRoomCode = code;
       $("room-code").textContent = code;
       $("room-box").classList.remove("hidden");
       setStatus("host-status", "房间已开好！把房间码发给小伙伴，等他们加入（可缩小成悬浮球挂着）", "ok");
@@ -108,6 +109,44 @@
   });
 
   $("btn-copy-code").addEventListener("click", () => copyText($("room-code").textContent, "房间码已复制"));
+
+  // 一键复制邀请文案（playit.gg 式：带上房间码 + 下载链接，直接发给朋友）
+  $("btn-copy-invite").addEventListener("click", () => {
+    const code = $("room-code").textContent || currentRoomCode;
+    if (!code || code.includes("·")) return toast("先创建房间", "err");
+    copyText(
+      "来一起玩 Minecraft！打开 CLink 输入房间码 " + code + " 就能进（复制这个码就行）。\n" +
+      "没装 CLink？下载：https://clink.541887.xyz",
+      "邀请文案已复制，发给朋友就行！"
+    );
+  });
+
+  // ---- 最近房间（快速重连）----
+  async function renderRecentRooms() {
+    try {
+      const list = await call("RecentRooms");
+      const box = $("recent-rooms");
+      const ul = $("recent-list");
+      ul.innerHTML = "";
+      if (!list || !list.length) {
+        box.classList.add("hidden");
+        return;
+      }
+      list.slice(0, 6).forEach((code) => {
+        const b = document.createElement("button");
+        b.className = "recent-chip";
+        b.textContent = code;
+        b.title = "点击填入房间码";
+        b.onclick = () => {
+          $("join-code").value = code;
+          $("join-code").focus();
+        };
+        ul.appendChild(b);
+      });
+      box.classList.remove("hidden");
+    } catch (e) { /* 浏览器调试静默 */ }
+  }
+  renderRecentRooms();
 
   $("btn-join").addEventListener("click", async () => {
     if (busy) return;
@@ -134,13 +173,14 @@
     $("room-box").classList.add("hidden");
     $("joined-box").classList.add("hidden");
     $("room-code").textContent = "· · · · · ·";
-    guests = 0;
+    currentRoomCode = "";
     setStatus("host-status", "先开单人世界 → Esc →「对局域网开放」→ 回来点「创建房间」");
     setStatus("guest-status", "加入成功后会自动复制服务器地址，进游戏直接连");
     busy = false;
     $("btn-join").disabled = false;
     renderMembers([]);
     updateBadge(0);
+    renderRecentRooms();
   }
 
   // ---- 会话事件流 ----
@@ -152,17 +192,27 @@
         toast(e.msg, "ok");
         if (currentView === "home") setStatus("host-status", e.msg + "（共 " + e.guests + " 人）", "ok");
         break;
+      case "guest-left":
+        toast("👋 " + e.msg, "");
+        if (currentView === "home") setStatus("host-status", e.msg + "（当前 " + e.guests + " 人）", "");
+        break;
       case "guest-kicked":
       case "guest-rejected":
         toast(e.msg, e.stage === "guest-kicked" ? "" : "err");
         break;
-      case "connected":
+      case "connected": {
         $("joined-box").classList.remove("hidden");
         if (e.addr) $("local-addr").textContent = e.addr;
+        // 连接质量徽标（借鉴主流 P2P 应用：方式 + 延迟一目了然）
+        const tierName = e.tier === "ipv6" ? "IPv6 极速直连" : "P2P 打洞";
+        const rtt = e.rtt && e.rtt > 0 ? " · 延迟 " + e.rtt + "ms" : "";
+        $("conn-quality").textContent = "（" + tierName + rtt + "）";
         setStatus("guest-status", "连接成功！已自动复制服务器地址", "ok");
         busy = false;
         $("btn-join").disabled = false;
+        renderRecentRooms();
         break;
+      }
       case "reconnecting":
         if (ballMode) break;
         setStatus("guest-status", "⚠️ 连接抖了一下，正在自动重连…（游戏里可能卡几秒）", "warn");
@@ -171,6 +221,9 @@
         if (ballMode) break;
         setStatus("guest-status", e.msg, "warn");
         setStatus("host-status", e.msg, "warn");
+        // 终态错误（房间不存在/加入失败）恢复按钮，避免卡死在"正在加入"
+        busy = false;
+        $("btn-join").disabled = false;
         break;
       case "info":
         if (!ballMode) setStatus("host-status", e.msg);
@@ -262,7 +315,7 @@
   });
 
   // ================= 模组仓库 =================
-  const GVS = ["1.21.4","1.21.1","1.21","1.20.6","1.20.4","1.20.1","1.19.4","1.19.2","1.18.2","1.16.5"];
+  const GVS = ["1.21.10","1.21.9","1.21.8","1.21.7","1.21.6","1.21.5","1.21.4","1.21.1","1.21","1.20.6","1.20.4","1.20.1","1.19.4","1.19.2","1.18.2","1.16.5"];
   const gvSel = $("mod-gv");
   GVS.forEach((v) => {
     const o = document.createElement("option");
@@ -272,8 +325,8 @@
 
   let modsDir = "";
   function refreshModsDirLabel() {
-    call("GetAdvanced").then((adv) => {
-      modsDir = (adv.mcDir || "").trim();
+    call("GetNet").then((net) => {
+      modsDir = (net.mcDir || "").trim();
       $("mods-dir-label").textContent = modsDir ? modsDir + "\\mods" : "（在设置里配置 MC 目录后自动填入）";
     }).catch(() => {});
   }
@@ -477,16 +530,6 @@
     }
   });
 
-  $("btn-bing").addEventListener("click", async () => {
-    try {
-      const url = await call("TbBing");
-      $("bing-img").src = url;
-      $("bing-img").classList.remove("hidden");
-    } catch (e) {
-      toast(e.message, "err");
-    }
-  });
-
   // ================= 设置 =================
   $("btn-save-profile").addEventListener("click", () => {
     const name = $("set-name").value.trim();
@@ -524,20 +567,62 @@
   }
 
   $("btn-probe").addEventListener("click", async () => {
-    $("probe-out").innerHTML = "诊断中…";
+    $("probe-out").innerHTML = "诊断中…（多节点探测，最多十几秒）";
     try {
       const r = await call("NetProbe");
+      const stunLine = r.stunNode
+        ? "STUN 节点：<code>" + r.stunNode.replace("stun:", "") + "</code>（" + (r.rttMs || "?") + "ms）<br>"
+        : "";
       $("probe-out").innerHTML =
-        "IPv6 直连：" + (r.ipv6 ? "✅ 支持" : "❌ 不支持（会自动走 P2P 打洞）") + "<br>" +
-        "NAT 类型：" + (r.nat || "检测中…") + "<br>" +
+        "IPv6 直连：" + (r.hasV6 ? "✅ 支持" : "❌ 不支持（会自动走 P2P 打洞）") + "<br>" +
+        stunLine +
+        "NAT 类型：" + (r.natType || "检测中…") + "<br>" +
         '<span class="dim">双层网络自动选路，你不用管</span>';
     } catch (e) {
       $("probe-out").innerHTML = "诊断失败：" + e.message;
     }
   });
 
+  // ================= 网络与信令设置 =================
+  let presetTurn = [];
+
+  function renderTurnPresets(enabled) {
+    const box = $("turn-preset-list");
+    box.innerHTML = "";
+    (presetTurn || []).forEach((n) => {
+      const row = document.createElement("label");
+      row.className = "switch-row turn-node";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = n.name;
+      cb.checked = (enabled || []).includes(n.name);
+      const span = document.createElement("span");
+      span.textContent = n.name + " · " + n.note;
+      row.append(cb, span);
+      box.appendChild(row);
+    });
+  }
+
+  function syncCustomFields() {
+    $("set-mailbox").classList.toggle("hidden", $("sig-node").value !== "custom");
+    $("set-stun").classList.toggle("hidden", $("stun-mode").value !== "custom");
+  }
+  $("sig-node").addEventListener("change", syncCustomFields);
+  $("stun-mode").addEventListener("change", syncCustomFields);
+
   $("btn-save-adv").addEventListener("click", () => {
-    call("SetAdvanced", $("set-turn").value, $("set-mcdir").value, $("set-mailbox").value)
+    const turnNodes = Array.from(document.querySelectorAll("#turn-preset-list input:checked")).map((c) => c.value);
+    const cfg = {
+      node: $("sig-node").value,
+      mailbox: $("set-mailbox").value.trim(),
+      stunMode: $("stun-mode").value,
+      stun: $("set-stun").value.trim(),
+      turnNodes: turnNodes,
+      turn: $("set-turn").value.trim(),
+      localPort: parseInt($("set-localport").value || "25565", 10),
+      mcDir: $("set-mcdir").value.trim(),
+    };
+    call("SetNet", cfg)
       .then(() => { toast("已保存", "ok"); refreshModsDirLabel(); })
       .catch((e) => toast(e.message, "err"));
   });
@@ -626,15 +711,28 @@
       const st = await call("Status");
       if (st.ball) { $("ball").classList.remove("hidden"); }
       if (st.name) $("set-name").value = st.name;
-      const adv = await call("GetAdvanced");
-      $("set-turn").value = adv.turn || "";
-      $("set-mcdir").value = adv.mcDir || "";
-      $("set-mailbox").value = adv.mailbox || "";
+      // 网络与信令设置回显
+      const net = await call("GetNet");
+      $("sig-node").value = net.node || "auto";
+      $("set-mailbox").value = net.mailbox || "";
+      $("stun-mode").value = net.stunMode || "auto";
+      $("set-stun").value = net.stun || "";
+      $("set-turn").value = net.turn || "";
+      $("set-localport").value = net.localPort || 25565;
+      $("set-mcdir").value = net.mcDir || "";
+      // 预设节点渲染（信令下拉/TURN 勾选列表）
+      try {
+        const pn = await call("PresetNodes");
+        presetTurn = (pn && pn.turn) || [];
+      } catch (e) { presetTurn = []; }
+      renderTurnPresets(net.turnNodes);
+      syncCustomFields();
       refreshModsDirLabel();
       // 当前版本信息
       const cv = await call("CurrentVersion");
       $("cur-version").textContent = "v" + cv.version;
       $("cur-build").textContent = cv.build;
+      $("tb-ver").textContent = "v" + cv.version;
       // 短信盒子配置回显
       const sm = await call("SmsGet");
       $("sms-url").value = sm.url || "";
@@ -643,8 +741,8 @@
       $("sms-join").checked = !!sm.joinOn;
       $("sms-reject").checked = !!sm.rejectOn;
       // 恢复未完成下载
-      if ((adv.mcDir || "").trim()) {
-        call("ModResumeAll", adv.mcDir + "\\mods").catch(() => {});
+      if ((net.mcDir || "").trim()) {
+        call("ModResumeAll", net.mcDir + "\\mods").catch(() => {});
       }
       renderBL();
     } catch (e) { /* 浏览器调试时静默 */ }

@@ -17,7 +17,7 @@
     <button class="tl ball" id="tl-ball" title="悬浮球模式">◉</button>
   </div>
   <div class="tb-title">CLink</div>
-  <div class="tb-ver" id="tb-ver">v1.1</div>
+  <div class="tb-ver" id="tb-ver">v1.3</div>
 </header>
 
 <!-- 侧栏导航 -->
@@ -57,12 +57,13 @@
         </div>
         <div class="status" id="host-status">先开单人世界 → Esc →「对局域网开放」→ 回来点「创建房间」</div>
 
-        <div class="room hidden" id="room-box">
-          <div class="lbl">房间码（已自动复制，发给小伙伴）</div>
-          <div class="code-row">
-            <div class="code" id="room-code">· · · · · ·</div>
-            <button class="btn ghost sm" id="btn-copy-code">复制</button>
-          </div>
+          <div class="room hidden" id="room-box">
+            <div class="lbl">房间码（已自动复制，发给小伙伴）</div>
+            <div class="code-row">
+              <div class="code" id="room-code">· · · · · ·</div>
+              <button class="btn ghost sm" id="btn-copy-code">复制</button>
+              <button class="btn ghost sm" id="btn-copy-invite" title="复制一条可以直接发给朋友的邀请消息">复制邀请文案</button>
+            </div>
           <div class="qr-wrap">
             <img id="room-qr" alt="房间码二维码" title="小伙伴手机扫码即可获取房间码">
             <span>手机扫码<br>获取房间码</span>
@@ -87,10 +88,14 @@
           <input id="join-code" class="code-input" type="text" maxlength="6" placeholder="· · · · · ·" autocomplete="off">
           <button id="btn-join" class="btn primary">一键加入</button>
         </div>
+        <div class="recent-rooms hidden" id="recent-rooms">
+          <span class="rr-label">最近加入：</span>
+          <div id="recent-list" class="recent-list"></div>
+        </div>
         <div class="status" id="guest-status">加入成功后会自动复制服务器地址，进游戏直接连</div>
 
         <div class="joined hidden" id="joined-box">
-          <div class="ok-line">✅ 已连上房主！</div>
+          <div class="ok-line">✅ 已连上房主！<span id="conn-quality" class="conn-quality"></span></div>
           <div class="addr-row">
             <code id="local-addr">127.0.0.1:25565</code>
             <button class="btn ghost sm" id="btn-copy-addr">复制</button>
@@ -107,7 +112,7 @@
     <div class="search-bar">
       <input id="mod-query" type="text" placeholder="搜索模组，如：JEI、Create、Xaero…" autocomplete="off">
       <select id="mod-gv"><option value="">版本</option></select>
-      <select id="mod-loader"><option value="">加载器</option><option value="fabric">Fabric</option><option value="forge">Forge</option><option value="quilt">Quilt</option><option value="neo forged">NeoForge</option></select>
+      <select id="mod-loader"><option value="">加载器</option><option value="fabric">Fabric</option><option value="forge">Forge</option><option value="quilt">Quilt</option><option value="neoforge">NeoForge</option></select>
       <button id="btn-mod-search" class="btn primary">搜索</button>
     </div>
     <div class="dl-target">
@@ -149,12 +154,6 @@
         </div>
         <div class="qr-preview"><img id="qr-img" class="hidden" alt="二维码"></div>
       </div>
-      <div class="card tool">
-        <h3>🖼️ 必应每日壁纸</h3>
-        <p class="muted">今天的全球精选美图</p>
-        <button id="btn-bing" class="btn primary sm">换一张</button>
-        <div class="bing-wrap"><img id="bing-img" class="hidden" alt="今日壁纸"></div>
-      </div>
     </div>
   </section>
 
@@ -186,13 +185,39 @@
     </div>
 
     <div class="card set-card">
-      <h3>高级设置</h3>
+      <h3>🌐 网络与信令</h3>
+      <p class="set-hint">信令服务器负责交换联机「握手信息」，全程端到端加密；支持多节点自动容灾，一个挂了自动切下一个。</p>
+
+      <label class="lbl" for="sig-node">信令服务器</label>
+      <select id="sig-node">
+        <option value="auto">自动容灾（推荐 · 剪贴板服务1 → UAPI）</option>
+        <option value="clip1">剪贴板服务1</option>
+        <option value="uapi">UAPI剪贴板服务</option>
+        <option value="custom">自定义…</option>
+      </select>
+      <input id="set-mailbox" type="text" class="indent-field hidden" placeholder="自定义信令服务地址，如 https://paste.example.com" autocomplete="off">
+
+      <label class="lbl" for="stun-mode">STUN 打洞节点</label>
+      <select id="stun-mode">
+        <option value="auto">自动选优（推荐 · Google 首选，不通自动换国内节点）</option>
+        <option value="google">Google 公共 STUN</option>
+        <option value="miwifi">小米公共 STUN（国内）</option>
+        <option value="cloudflare">Cloudflare 公共 STUN</option>
+        <option value="nextcloud">Nextcloud 公共 STUN</option>
+        <option value="custom">自定义列表…</option>
+      </select>
+      <input id="set-stun" type="text" class="indent-field hidden" placeholder="stun:host:port，逗号分隔" autocomplete="off">
+
+      <label class="lbl">TURN 中继节点（对称 NAT 兜底 · 勾选启用，公共节点不保证可用）</label>
+      <div id="turn-preset-list" class="turn-preset-list"></div>
+      <label class="lbl" for="set-turn">自定义 TURN（可选，逗号分隔）</label>
+      <input id="set-turn" type="text" placeholder="user:pass@turn:host:port" autocomplete="off">
+
+      <label class="lbl" for="set-localport">本地端口（加入房间用；被占用或自己开了服务器时可改）</label>
+      <input id="set-localport" type="text" inputmode="numeric" placeholder="25565" autocomplete="off">
+
       <label class="lbl" for="set-mcdir">MC 目录（.minecraft 所在路径，用于模组下载）</label>
       <input id="set-mcdir" type="text" placeholder="C:\Users\你\AppData\Roaming\.minecraft" autocomplete="off">
-      <label class="lbl" for="set-turn">TURN 中继（可选，逗号分隔）</label>
-      <input id="set-turn" type="text" placeholder="user:pass@turn:host:port" autocomplete="off">
-      <label class="lbl" for="set-mailbox">信箱服务地址（可选）</label>
-      <input id="set-mailbox" type="text" placeholder="默认公共信箱" autocomplete="off">
       <button id="btn-save-adv" class="btn primary sm">保存</button>
     </div>
 
@@ -218,13 +243,13 @@
     <div class="card set-card">
       <h3>软件更新</h3>
       <div class="update-row">
-        <span class="upd-state" id="upd-state">当前版本 <b id="cur-version">v1.1.0</b>（发布编号 <b id="cur-build">2</b>）</span>
+        <span class="upd-state" id="upd-state">当前版本 <b id="cur-version">v1.3.0</b>（发布编号 <b id="cur-build">4</b>）</span>
         <button id="btn-check-update" class="btn primary sm">立即检查更新</button>
       </div>
       <div class="tool-out" id="check-out"></div>
     </div>
 
-    <div class="about">CLink v1.1 · 开源免费 · clink.541887.xyz · github.com/ccdsyy/CLink<br>遇到问题加互助群：1108157805</div>
+    <div class="about">CLink v1.3 · 开源免费 · clink.541887.xyz · github.com/ccdsyy/CLink<br>遇到问题加互助群：1108157805</div>
   </section>
 </main>
 
