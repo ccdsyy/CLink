@@ -140,6 +140,7 @@ P2P 直连的本质是双方交换网络地址后建立连接，对等端互相�
 ```
 
 完整协议规范（含实测记录）：[docs/PROTOCOL.md](docs/PROTOCOL.md)
+功能更新路线图（69 项穿透/传输/中继技术规划）：[docs/ROADMAP.md](docs/ROADMAP.md)
 
 ---
 
