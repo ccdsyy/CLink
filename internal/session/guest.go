@@ -32,7 +32,7 @@ type GuestConfig struct {
 	Name       string
 	RelayAddrs []*net.UDPAddr // 自建中继节点（ROADMAP #31，空=不启用）
 	RelayPSK   string         // 中继共享口令
-	LastTier   string         // 路径记忆（ROADMAP #58）：上次成功的路径类型
+	LastTier   string         // 路径记忆/会话票证（ROADMAP #48/#58）：上次成功 tier
 	Scanner    *lanscan.Scanner
 }
 
@@ -80,6 +80,9 @@ func StartGuest(ctx context.Context, cfg GuestConfig, emit func(Event)) (*Guest,
 
 // Tier 实际使用的连接层。
 func (g *Guest) Tier() string { g.mu.Lock(); defer g.mu.Unlock(); return g.tier }
+
+// Code 房间码（诊断/路径记忆用）。
+func (g *Guest) Code() string { return g.cfg.Code }
 
 // Addr 本地连接地址。
 func (g *Guest) Addr() string { g.mu.Lock(); defer g.mu.Unlock(); return g.addr }
@@ -260,6 +263,18 @@ func (g *Guest) buildPlan(sig *mailbox.Signal, epoch int) (fast []tunnel.Plan, r
 		})
 	}
 
+	// #48/#58 会话票证：上次成功的 tier 直接前置 + 提预算（重连 10s→1s 级）
+	if g.cfg.LastTier != "" {
+		for i := range race {
+			if race[i].Name == g.cfg.LastTier {
+				race[i].Budget = race[i].Budget * 3 / 2
+				picked := race[i]
+				race = append([]tunnel.Plan{picked}, append(race[:i], race[i+1:]...)...)
+				break
+			}
+		}
+	}
+
 	// 竞速层预算（#19 矩阵简化版）：
 	//   EIM×EIM → 打洞必成率高，WebRTC 45s
 	//   一侧对称（nonEIM）→ 打洞难，WebRTC 压 20s，中继前置意义不大但并行
@@ -288,8 +303,147 @@ func (g *Guest) buildPlan(sig *mailbox.Signal, epoch int) (fast []tunnel.Plan, r
 				return g.makeRelayPath(ctx)
 			},
 		})
+		// 中继引路点对点打洞（#6/#1 自研版）：比中继快（省一半链路）
+		// 且省中继带宽；EIM×EIM 或 EIF 场景命中率高
+		race = append(race, tunnel.Plan{
+			Name: "punch", Budget: 8 * time.Second,
+			Make: func(ctx context.Context) (tunnel.Path, error) {
+				return g.makePunchPath(ctx)
+			},
+		})
 	}
 	return fast, race
+}
+
+// makePunchPath 中继引路点对点打洞（ROADMAP #6/#1 自研栈版）：
+//
+//	中继 PONG 带出房主的公网映射地址（引路人）→ 客机独立 socket 朝它喷
+//	KEEP（自身 NAT 开映射）→ 房主侧响应帧穿透客机 NAT → 双方映射打开，
+//	rudp 会话直连；房主响应同时经 #49 迁移机制绑定客机新地址。
+//	端口预测简化版（#3）：1.5s 无响应对 [port-4, port+12] 喷包。
+func (g *Guest) makePunchPath(ctx context.Context) (tunnel.Path, error) {
+	if len(g.cfg.RelayAddrs) == 0 {
+		return nil, errors.New("无中继配置")
+	}
+	_, _, peerAddr, err := relay.SelectRelay(g.cfg.RelayPSK, g.cfg.Code, relay.RoleGuest, g.cfg.RelayAddrs)
+	if err != nil {
+		return nil, err
+	}
+	if peerAddr == nil {
+		return nil, errors.New("中继尚未观察到房主地址（房主侧未注册）")
+	}
+
+	ep, err := rudp.NewEndpoint(0)
+	if err != nil {
+		return nil, err
+	}
+	tag2 := relay.DeriveTagN(g.cfg.RelayPSK, g.cfg.Code, 1)
+	key := relayKey(g.cfg.RelayPSK, g.cfg.Code)
+	stream, err := ep.Open(peerAddr, tag2, key)
+	if err != nil {
+		ep.Close()
+		return nil, err
+	}
+
+	// 喷包循环：主地址持续 + 1.5s 后预测端口区间（#3）
+	go func() {
+		t := time.NewTicker(250 * time.Millisecond)
+		defer t.Stop()
+		start := time.Now()
+		predicted := false
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stream.Dead():
+				return
+			case <-t.C:
+				if stream.GotInbound() {
+					return // 打通
+				}
+				stream.SendNudge()
+				if !predicted && time.Since(start) > 1500*time.Millisecond {
+					predicted = true
+					ip := peerAddr.IP
+					for d := -4; d <= 12; d++ {
+						if d == 0 {
+							continue
+						}
+						p := peerAddr.Port + d
+						if p > 0 && p < 65536 {
+							stream.NudgeTo(&net.UDPAddr{IP: ip, Port: p})
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	// 等待打通（收到房主任何帧）
+	establishDeadline := time.Now().Add(8 * time.Second)
+	for !stream.GotInbound() {
+		select {
+		case <-ctx.Done():
+			ep.Close()
+			return nil, ctx.Err()
+		case <-stream.Dead():
+			ep.Close()
+			return nil, errors.New("打洞流已死")
+		case <-time.After(100 * time.Millisecond):
+		}
+		if time.Now().After(establishDeadline) {
+			ep.Close()
+			return nil, errors.New("打洞未打通（对端 NAT 过滤过严）")
+		}
+	}
+
+	p := &punchPath{
+		g: g, ep: ep, stream: stream,
+		mux:  tunnel.NewMuxer(stream),
+		dead: make(chan struct{}), deadOne: sync.Once{},
+	}
+	go func() {
+		<-stream.Dead()
+		p.Close()
+	}()
+	return p, nil
+}
+
+// punchPath 中继引路的直连路径（数据不经中继）。
+type punchPath struct {
+	g       *Guest
+	ep      *rudp.Endpoint
+	stream  *rudp.Stream
+	mux     *tunnel.Muxer
+	dead    chan struct{}
+	deadOne sync.Once
+
+	mu         sync.Mutex
+	nextConnID uint16
+}
+
+func (p *punchPath) Name() string          { return "punch" }
+func (p *punchPath) Dead() <-chan struct{} { return p.dead }
+func (p *punchPath) RTT() time.Duration    { return p.stream.RTT() }
+func (p *punchPath) Close() {
+	p.deadOne.Do(func() { close(p.dead) })
+	p.mux.Close()
+	p.ep.Close()
+}
+func (p *punchPath) Establish(ctx context.Context) error { return nil } // Make 内已建立
+
+func (p *punchPath) Open() (net.Conn, error) {
+	return p.mux.Channel(p.nextID()), nil
+}
+
+func (p *punchPath) nextID() uint16 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	id := p.nextConnID
+	if p.nextConnID < 65500 {
+		p.nextConnID++
+	}
+	return id
 }
 
 // makeWebRTCPath WebRTC 打洞路径（Tier 2）。
@@ -365,7 +519,7 @@ func (p *webrtcPath) Open() (net.Conn, error) {
 // makeRelayPath 自建中继路径（Tier 3，ROADMAP #31-33）。
 func (g *Guest) makeRelayPath(ctx context.Context) (tunnel.Path, error) {
 	// #38 多节点选址（并发 ping 取 RTT 中位数最小者）
-	server, conn, err := relay.SelectRelay(g.cfg.RelayPSK, g.cfg.Code, relay.RoleGuest, g.cfg.RelayAddrs)
+	server, conn, _, err := relay.SelectRelay(g.cfg.RelayPSK, g.cfg.Code, relay.RoleGuest, g.cfg.RelayAddrs)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +625,9 @@ func (g *Guest) serve(path tunnel.Path, epoch int, localPort int) string {
 		Msg: "连接成功（" + tierName + "）！"})
 	g.emit(Event{Stage: "info", Msg: "打开游戏 → 多人游戏 → 直接连接 → 粘贴 " + g.addr})
 
-	// 掉线感知：路径死亡 → 断开本地监听 → 外层重连
+	// 掉线感知 + RTT 滞回切换（ROADMAP #57）：
+	//   基线 = 前 3 个采样均值；连续 3 个采样 > 2.5×基线 → 判定劣化，
+	//   关闭监听触发重赛（换路径），带迟滞防网络抖动误切
 	pathDead := path.Dead()
 	go func() {
 		select {
@@ -479,6 +635,46 @@ func (g *Guest) serve(path tunnel.Path, epoch int, localPort int) string {
 			_ = ln.Close()
 		case <-g.ctx.Done():
 			_ = ln.Close()
+		}
+	}()
+	go func() {
+		var samples []time.Duration
+		baseline := time.Duration(0)
+		bad := 0
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-pathDead:
+				return
+			case <-g.ctx.Done():
+				return
+			case <-t.C:
+				rtt := path.RTT()
+				if rtt <= 0 {
+					continue
+				}
+				samples = append(samples, rtt)
+				if len(samples) <= 3 {
+					if len(samples) == 3 {
+						sum := time.Duration(0)
+						for _, v := range samples {
+							sum += v
+						}
+						baseline = sum / 3
+					}
+					continue
+				}
+				if baseline > 0 && rtt > baseline*5/2 {
+					bad++
+					if bad >= 3 {
+						_ = ln.Close() // 触发重赛
+						return
+					}
+				} else {
+					bad = 0
+				}
+			}
 		}
 	}()
 

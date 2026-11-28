@@ -209,3 +209,34 @@ rudp / relay / portmap / tunnel(Path+Muxer) / mcproto / lanscan / ipc / cmd/clin
 ### 版本
 
 v1.4.0 / AppBuild=5；update.json 未 bump（发布 exe 时再更，避免指向不存在文件）
+
+---
+
+## 2026-11-28 · v1.7.0：路线图 v1.5-v1.7 剩余项落地（"更新到1.7"指令）
+
+### 落地清单（17 项）
+
+见 docs/ROADMAP.md §0.2。新增 internal/ws（最小 RFC6455）+ internal/proxyconn
+（HTTP CONNECT）+ relay WS 双传输 + punchPath（中继引路点对点打洞）。
+
+### 关键设计
+
+- **中继引路打洞**：tag0=中继会话、tag1=直连会话（HMAC[4:8]）；客机朝中继
+  观察到的房主地址喷 KEEP（自身映射打开），房主响应帧穿透客机 NAT，
+  #49 迁移机制把房主会话绑定到客机直连地址——数据不经中继
+- **WS 中继**：rudp Endpoint 抽象为 net.PacketConn（UDP 与 WS 适配器通用），
+  一条 WS 二进制消息 = 一个数据报；服务端 peerLink 抽象（udpPeer/wsPeerWrap）
+- **RFC5780**：Test2/Test3 CHANGE-REQUEST 对 OTHER-ADDRESS 服务器；
+  不支持则回退映射对比（老逻辑）
+
+### 验证
+
+- build/vet 全绿；rudp 6/6、relay 4/4（含引路时序）、ws 回环（含 200KB）、
+  mcproto 门控三态、mailbox 真网 ✅
+- mcproto 测试曾因 pipe 写无读者阻塞——测试补常驻排空 goroutine（教训）
+
+### 未做（如实保留）
+
+#43 QUIC（需 quic-go 重依赖，评估后立项）、#51 完整 Noise 握手、
+#4 256 socket 喷洒、#8 预填充业务包、#10 多出口候选（需协议扩展）、
+#55 QoS 对抗、#20/34/35/40 生态项、#63/64/68 Mod 系列

@@ -163,7 +163,7 @@ func (h *Host) relayLoop() {
 		if h.ctx.Err() != nil {
 			return
 		}
-		server, conn, err := relay.SelectRelay(psk, h.code, relay.RoleHost, h.cfg.RelayAddrs)
+		server, conn, _, err := relay.SelectRelay(psk, h.code, relay.RoleHost, h.cfg.RelayAddrs)
 		if err != nil {
 			h.emit(Event{Stage: "info", Msg: "自建中继暂不可达（" + err.Error() + "），不影响直连"})
 			select {
@@ -174,6 +174,16 @@ func (h *Host) relayLoop() {
 			continue
 		}
 		ep := rudp.Wrap(conn)
+		// tag2 接受器（ROADMAP #6 引路打洞）：客机经引路地址直接喷 KEEP
+		// 过来，被动建流 → 独立 Muxer 服务 → 桥接 MC（数据不经中继）
+		punchTag := relay.DeriveTagN(psk, h.code, 1)
+		go func() {
+			pstream, perr := ep.AcceptStream(punchTag, key, 0)
+			if perr != nil {
+				return
+			}
+			h.serveMuxStream(pstream)
+		}()
 		stream, err := ep.Open(server, tag, key)
 		if err != nil {
 			ep.Close()
@@ -183,30 +193,7 @@ func (h *Host) relayLoop() {
 		go relay.KeepaliveLoop(conn, server, tag, psk, h.code, relay.RoleHost, stop)
 		h.emit(Event{Stage: "info", Msg: "📡 中继节点已就绪（" + relay.AddrString(server) + "），对称型网络的伙伴也能加入了"})
 
-		// 接受 Mux 通道：每条通道 = 一条客机 MC 连接，桥接本机 MC 端口
-		mux := tunnel.NewMuxerServer(stream)
-		go func() {
-			for {
-				ch, err := mux.Accept()
-				if err != nil {
-					return
-				}
-				go func(ch *tunnel.MuxConn) {
-					defer ch.Close()
-					target, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", h.cfg.MCPort), 5*time.Second)
-					if err != nil {
-						return
-					}
-					if tc, ok := target.(*net.TCPConn); ok {
-						_ = tc.SetNoDelay(true) // #53
-					}
-					done := make(chan struct{}, 2)
-					go func() { _, _ = io.Copy(ch, target); done <- struct{}{} }()
-					go func() { _, _ = io.Copy(target, ch); done <- struct{}{} }()
-					<-done
-				}(ch)
-			}
-		}()
+		mux := h.serveMuxStream(stream)
 
 		// 任一侧死亡 → 重选节点
 		select {
@@ -220,6 +207,34 @@ func (h *Host) relayLoop() {
 		close(stop)
 		ep.Close()
 	}
+}
+
+// serveMuxStream 在一条流上起 Muxer 服务：每条通道桥接本机 MC 端口。
+func (h *Host) serveMuxStream(stream *rudp.Stream) *tunnel.Muxer {
+	mux := tunnel.NewMuxerServer(stream)
+	go func() {
+		for {
+			ch, err := mux.Accept()
+			if err != nil {
+				return
+			}
+			go func(ch *tunnel.MuxConn) {
+				defer ch.Close()
+				target, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", h.cfg.MCPort), 5*time.Second)
+				if err != nil {
+					return
+				}
+				if tc, ok := target.(*net.TCPConn); ok {
+					_ = tc.SetNoDelay(true) // #53
+				}
+				done := make(chan struct{}, 2)
+				go func() { _, _ = io.Copy(ch, target); done <- struct{}{} }()
+				go func() { _, _ = io.Copy(target, ch); done <- struct{}{} }()
+				<-done
+			}(ch)
+		}
+	}()
+	return mux
 }
 
 // selfCheckLoop 房主常驻自检（#59）：周期刷新直连评分并广播。
@@ -362,6 +377,18 @@ func (h *Host) runEpoch() error {
 		h.emit(Event{Stage: "info", Msg: "房间已达最大人数（31），如需更多请退出后重新开房"})
 		<-h.ctx.Done()
 		return nil
+	}
+
+	// #30 v6 地址轮换容忍：每 epoch 重新枚举公网 v6（临时隐私地址会轮换），
+	// 新地址随本轮 Offer 广播，客机断线重连即拿到最新地址
+	if h.v6 != nil {
+		if addrs := netprobe.PublicIPv6(); len(addrs) > 0 {
+			h.v6Addrs = h.v6Addrs[:0]
+			for _, a := range addrs {
+				h.v6Addrs = append(h.v6Addrs, a.String())
+			}
+			h.v6Addr = h.v6Addrs[0]
+		}
 	}
 
 	// 1. WebRTC 端点（即使有 v6 也准备，双通道提高客机加入成功率）

@@ -27,16 +27,21 @@ func TestRelayLoopback(t *testing.T) {
 	serverAddr := sconn.LocalAddr().(*net.UDPAddr)
 
 	// 选址（同时完成两端注册，#38）
-	guestAddr, guestConn, err := SelectRelay(psk, room, RoleGuest, []*net.UDPAddr{serverAddr})
+	guestAddr, guestConn, _, err := SelectRelay(psk, room, RoleGuest, []*net.UDPAddr{serverAddr})
 	if err != nil {
 		t.Fatalf("guest 选址失败: %v", err)
 	}
 	_ = guestAddr
-	hostAddr, hostConn, err := SelectRelay(psk, room, RoleHost, []*net.UDPAddr{serverAddr})
+	hostAddr, hostConn, peerIntro, err := SelectRelay(psk, room, RoleHost, []*net.UDPAddr{serverAddr})
 	if err != nil {
 		t.Fatalf("host 选址失败: %v", err)
 	}
 	_ = hostAddr
+	if peerIntro == nil {
+		t.Log("引路：host ping 时对端地址未登记（时序），可忽略——后续 PONG 会带上")
+	} else {
+		t.Logf("引路 ✓：host 观察到 guest 地址 %s", peerIntro)
+	}
 
 	tag := DeriveTag(psk, room)
 	key := sha256.Sum256([]byte("room-key-" + room)) // 端到端密钥（#51 简化版）

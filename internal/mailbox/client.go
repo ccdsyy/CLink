@@ -41,6 +41,22 @@ func NewClient(baseURL string) *Client {
 	return NewClientMulti(baseURL)
 }
 
+// NewClientWithProxy 创建走 HTTP 代理的客户端（ROADMAP #37）。
+func NewClientWithProxy(baseURL, proxyURL string) *Client {
+	c := NewClient(baseURL)
+	if proxyURL != "" {
+		c.http = &http.Client{
+			Timeout: 8 * time.Second,
+			Transport: &http.Transport{
+				Proxy: func(*http.Request) (*url.URL, error) {
+					return url.Parse(proxyURL)
+				},
+			},
+		}
+	}
+	return c
+}
+
 // NewClientMulti 创建多节点容灾客户端（按序轮换；全空时使用默认节点）。
 func NewClientMulti(bases ...string) *Client {
 	var clean []string

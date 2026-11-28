@@ -58,8 +58,8 @@ type App struct {
 
 // 版本信息：每次发版改这里 + website/update.json（build 必须同时 +1）。
 const (
-	AppVersion = "1.4.0"
-	AppBuild   = 5 // 发布编号：1=v1.0.0 … 4=v1.3.0, 5=v1.4.0, …
+	AppVersion = "1.7.0"
+	AppBuild   = 6 // 发布编号：1=v1.0.0 … 4=v1.3.0, 5=v1.4.0, …
 )
 
 // Config 持久化配置（%APPDATA%/CLink/config.json）。
@@ -75,6 +75,8 @@ type Config struct {
 	RecentRooms       []string `json:"recentRooms"` // 最近房间码（快速重连）
 	RelayNodes        string   `json:"relayNodes"`  // 自建中继节点列表（ROADMAP #31，udp://ip:port 逗号分隔）
 	RelayPSK          string   `json:"relayPSK"`    // 中继共享口令（与 clink-relay 服务端一致）
+	PathMemo          map[string]string `json:"pathMemo"` // 会话票证（ROADMAP #48/#58）：房间码 → 上次成功 tier
+	ProxyURL          string   `json:"proxyUrl"`    // HTTP CONNECT 代理（ROADMAP #37，校园网/公司网出站）
 	FwDone            bool     `json:"fwDone"`
 	Name              string   `json:"name"`              // 玩家昵称（黑名单/通知/成员列表标识）
 	NotifyOn          bool     `json:"notifyOn"`          // 加入通知开关
@@ -98,6 +100,7 @@ type NetCfg struct {
 	MCDir      string   `json:"mcDir"`      // MC 目录
 	RelayNodes string   `json:"relayNodes"` // 自建中继节点
 	RelayPSK   string   `json:"relayPSK"`   // 中继共享口令
+	ProxyURL   string   `json:"proxyUrl"`   // HTTP CONNECT 代理（#37）
 }
 
 // NewApp 构造（加载配置）。
@@ -345,6 +348,25 @@ func (a *App) emit(e session.Event) {
 	// 客机连接成功 → 自动复制 127.0.0.1:xxxx（保姆级交互）
 	if e.Stage == "connected" && e.Addr != "" {
 		_ = wruntime.ClipboardSetText(a.ctx, e.Addr)
+		// #48/#58 会话票证：记录该房间成功的 tier，重连直接前置
+		a.mu.Lock()
+		if a.guest != nil && e.Tier != "" {
+			code := a.guest.Code()
+			if a.cfg.PathMemo == nil {
+				a.cfg.PathMemo = map[string]string{}
+			}
+			a.cfg.PathMemo[code] = e.Tier
+			if len(a.cfg.PathMemo) > 16 { // 上限
+				for k := range a.cfg.PathMemo {
+					delete(a.cfg.PathMemo, k)
+					break
+				}
+			}
+			a.mu.Unlock()
+			a.saveConfig()
+		} else {
+			a.mu.Unlock()
+		}
 	}
 
 	// 房主侧：成员状态变化 → 推成员列表 + 系统通知
@@ -881,6 +903,7 @@ func (a *App) SetNet(v NetCfg) error {
 	a.cfg.MCDir = strings.TrimSpace(v.MCDir)
 	a.cfg.RelayNodes = strings.TrimSpace(v.RelayNodes)
 	a.cfg.RelayPSK = strings.TrimSpace(v.RelayPSK)
+	a.cfg.ProxyURL = strings.TrimSpace(v.ProxyURL)
 	a.mu.Unlock()
 	a.saveConfig()
 	return nil
@@ -901,6 +924,7 @@ func (a *App) GetNet() NetCfg {
 		MCDir:      a.cfg.MCDir,
 		RelayNodes: a.cfg.RelayNodes,
 		RelayPSK:   a.cfg.RelayPSK,
+		ProxyURL:   a.cfg.ProxyURL,
 	}
 }
 

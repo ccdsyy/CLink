@@ -26,6 +26,7 @@ import (
 	"log"
 	"net"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -37,6 +38,7 @@ const (
 	innerKEEP = 0x13
 	innerPING = 0x14
 	innerPONG = 0x15
+	innerFEC  = 0x16 // XOR 前向纠错（ROADMAP #45）
 
 	routeENCRYPTED = 0x00 // 加密内层
 	routePING      = 0x20 // 中继层探测（relay 包使用）
@@ -49,7 +51,9 @@ const (
 	maxDatagram = 1200
 	ChunkSize   = 1120
 
-	windowSize    = 64
+	windowSize    = 64  // 基础在途窗口
+	windowMax     = 256 // BBR-lite 动态窗口上限（#44 简化版）
+	fecGroupSize  = 4   // 每 4 个 DATA 发 1 个 XOR 校验帧（#45）
 	reorderMax    = windowSize * 4
 	rtoMin        = 200 * time.Millisecond
 	rtoMax        = 2 * time.Second
@@ -64,8 +68,10 @@ var (
 )
 
 // Endpoint 单 socket 多会话端点。
+// conn 抽象为 PacketConn：既可挂 UDP socket，也可挂 WS 通道适配器
+// （ROADMAP #36——rudp 帧作为 WS 二进制消息）。
 type Endpoint struct {
-	conn *net.UDPConn
+	conn net.PacketConn
 
 	mu         sync.Mutex
 	sessions   map[uint32]*Stream
@@ -76,7 +82,7 @@ type Endpoint struct {
 
 // NewEndpoint 绑定本地 UDP 端口（port=0 随机）。
 func NewEndpoint(port int) (*Endpoint, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+	conn, err := net.ListenPacket("udp4", ":"+strconv.Itoa(port))
 	if err != nil {
 		return nil, err
 	}
@@ -90,9 +96,9 @@ func NewEndpoint(port int) (*Endpoint, error) {
 	return e, nil
 }
 
-// Wrap 包装既有 UDPConn 为端点（与中继 PING/选址共用同一 socket——
-// 单 socket 多路复用 #52：NAT 只占一条表项，中继按源地址配对才一致）。
-func Wrap(conn *net.UDPConn) *Endpoint {
+// Wrap 包装既有 PacketConn 为端点（UDP socket 或 WS 通道适配器；
+// 与中继 PING/选址共用同一 socket——单 socket 多路复用 #52）。
+func Wrap(conn net.PacketConn) *Endpoint {
 	e := &Endpoint{
 		conn:       conn,
 		sessions:   make(map[uint32]*Stream),
@@ -103,8 +109,13 @@ func Wrap(conn *net.UDPConn) *Endpoint {
 	return e
 }
 
-// LocalPort 实际本地 UDP 端口。
-func (e *Endpoint) LocalPort() int { return e.conn.LocalAddr().(*net.UDPAddr).Port }
+// LocalPort 实际本地 UDP 端口（非 UDP 传输返回 0）。
+func (e *Endpoint) LocalPort() int {
+	if ua, ok := e.conn.LocalAddr().(*net.UDPAddr); ok {
+		return ua.Port
+	}
+	return 0
+}
 
 // Open 以指定标签向 remote 打开（或复用）一条可靠流（主动侧）。
 func (e *Endpoint) Open(remote *net.UDPAddr, tag uint32, key []byte) (*Stream, error) {
@@ -187,7 +198,7 @@ func (e *Endpoint) Close() {
 func (e *Endpoint) readLoop() {
 	buf := make([]byte, 2048)
 	for {
-		n, raddr, err := e.conn.ReadFromUDP(buf)
+		n, raddrAny, err := e.conn.ReadFrom(buf)
 		if err != nil {
 			// 共享 socket 上别处（如中继选址 Ping）留下的过期 deadline
 			// 会立刻 i/o timeout——继续读，不当作端点关闭
@@ -196,6 +207,7 @@ func (e *Endpoint) readLoop() {
 			}
 			return
 		}
+		raddr, _ := raddrAny.(*net.UDPAddr) // WS 适配器给合成地址，非 UDP 时为 nil-safe
 		if n < 5 {
 			continue
 		}
@@ -237,6 +249,7 @@ func (e *Endpoint) readLoop() {
 		if s == nil {
 			continue // 无人等待的流：丢弃
 		}
+		s.rebind(raddr) // #49 连接迁移：认证帧即凭据，对端换网自动跟随
 
 		kind := route
 		payload := body
@@ -278,8 +291,28 @@ type Stream struct {
 	reorder  map[uint32][]byte
 	ackPend  bool
 
-	mu2      sync.Mutex
-	lastSeen time.Time
+	// #42 简化版快速重传：连续重复 ACK → 立即重发 cum 处包
+	lastCum uint32
+	dupAck  int
+
+	// #44 简化版（BBR-lite）：按吞吐估计动态窗口
+	ackBytes   int64
+	rateStart  time.Time
+	rateBytes  int64
+	rateBPS    float64 // 估计投递速率（字节/秒）
+	fecAccum   []byte  // #45 XOR 累积器
+	fecCount   int
+	fecBase    uint32
+	fecGroups  map[uint32]*fecGrp
+	fecPending uint32 // 本组起始 seq
+
+	// #49 连接迁移：对端地址可能变化（WiFi→4G），认证帧即凭据
+	addrMu  sync.Mutex
+	remote_ *net.UDPAddr
+
+	mu2       sync.Mutex
+	lastSeen  time.Time
+	createdAt time.Time
 
 	deliver chan []byte
 	dead    chan struct{}
@@ -292,18 +325,29 @@ type packet struct {
 	sent time.Time
 }
 
+// fecGrp 一个 XOR 纠错组（#45）：base..base+fecGroupSize-1 的帧，缺一个可恢复
+type fecGrp struct {
+	frames map[uint32][]byte // seq → 完整 seqPayload
+	parity []byte            // XOR（含 seq 头）
+	size   int
+}
+
 func newStream(ep *Endpoint, remote *net.UDPAddr, tag uint32, key []byte) *Stream {
 	s := &Stream{
-		ep:       ep,
-		remote:   remote,
-		tag:      tag,
-		key:      key,
-		inflight: make(map[uint32]*packet),
-		reorder:  make(map[uint32][]byte),
-		deliver:  make(chan []byte, 256),
-		dead:     make(chan struct{}),
-		rto:      rtoMin,
-		lastSeen: time.Now(),
+		ep:        ep,
+		remote_:   remote,
+		tag:       tag,
+		key:       key,
+		inflight:  make(map[uint32]*packet),
+		reorder:   make(map[uint32][]byte),
+		deliver:   make(chan []byte, 256),
+		dead:      make(chan struct{}),
+		rto:       rtoMin,
+		lastSeen:  time.Now(),
+		createdAt: time.Now(),
+		fecGroups: make(map[uint32]*fecGrp),
+		fecBase:   ^uint32(0), // 未开组
+		rateStart: time.Now(),
 	}
 	if len(key) == 32 {
 		if block, err := aes.NewCipher(key); err == nil {
@@ -339,8 +383,24 @@ func (s *Stream) startKeepalive() {
 	}()
 }
 
+// rebind 连接迁移（#49）：认证帧来自新地址 → 跟随（WiFi 切 4G 不掉线）
+func (s *Stream) rebind(addr *net.UDPAddr) {
+	s.addrMu.Lock()
+	defer s.addrMu.Unlock()
+	if s.remote_ == nil || !s.remote_.IP.Equal(addr.IP) || s.remote_.Port != addr.Port {
+		s.remote_ = addr
+	}
+}
+
+func (s *Stream) getRemote() *net.UDPAddr {
+	s.addrMu.Lock()
+	defer s.addrMu.Unlock()
+	return s.remote_
+}
+
 // sendFrame 组帧发送（tag+route 明文，加密模式 body 整体进密文）。
 func (s *Stream) sendFrame(kind byte, body []byte) {
+	remote := s.getRemote()
 	if s.aead != nil {
 		inner := make([]byte, 1+len(body))
 		inner[0] = kind
@@ -354,9 +414,9 @@ func (s *Stream) sendFrame(kind byte, body []byte) {
 		out = append(out, routeENCRYPTED)
 		out = append(out, nonce...)
 		out = s.aead.Seal(out, nonce, inner, nil)
-		n, werr := s.ep.conn.WriteToUDP(out, s.remote)
+		n, werr := s.ep.conn.WriteTo(out, remote)
 		if rudpDebug {
-			log.Printf("[rudp@%d] 发送 kind=%d len=%d → %s (n=%d err=%v) head=%x", s.ep.conn.LocalAddr().(*net.UDPAddr).Port, inner[0], len(out), s.remote, n, werr, out[5:21])
+			log.Printf("[rudp@%d] 发送 kind=%d len=%d → %s (n=%d err=%v) head=%x", s.ep.conn.LocalAddr().(*net.UDPAddr).Port, inner[0], len(out), remote, n, werr, out[5:21])
 		}
 		return
 	}
@@ -364,7 +424,7 @@ func (s *Stream) sendFrame(kind byte, body []byte) {
 	binary.BigEndian.PutUint32(out[0:4], s.tag)
 	out[4] = kind
 	out = append(out, body...)
-	_, _ = s.ep.conn.WriteToUDP(out, s.remote)
+	_, _ = s.ep.conn.WriteTo(out, remote)
 }
 
 func (s *Stream) decrypt(body []byte) (kind byte, payload []byte, err error) {
@@ -392,6 +452,7 @@ func (s *Stream) handleFrame(kind byte, body []byte) {
 		seq := binary.BigEndian.Uint32(body[:4])
 		// 读循环内绝不同步发网络包（可能阻塞）——ACK 异步化
 		defer func() { go s.sendAck() }()
+		s.fecCollect(seq, body) // #45：完整 seqPayload 进纠错组
 		s.mu.Lock()
 		switch {
 		case seqSeqLt(seq, s.wantSeq):
@@ -436,6 +497,18 @@ func (s *Stream) handleFrame(kind byte, body []byte) {
 			}
 		}
 
+	case innerFEC:
+		// #45：parity 帧 body = [4B base][XOR(seqPayload...)]
+		if len(body) >= 4 {
+			s.mu.Lock()
+			base := binary.BigEndian.Uint32(body[:4])
+			if g, ok := s.fecGroups[base]; ok {
+				g.parity = append([]byte(nil), body[4:]...)
+			}
+			s.mu.Unlock()
+			s.fecTryRecover()
+		}
+
 	case innerFIN:
 		s.close(false)
 
@@ -465,18 +538,10 @@ func (s *Stream) deliverChunk(b []byte) {
 }
 
 func (s *Stream) flushReorder() {
-	for {
-		s.mu.Lock()
-		b, ok := s.reorder[s.wantSeq]
-		if !ok {
-			s.mu.Unlock()
-			return
-		}
-		delete(s.reorder, s.wantSeq)
-		s.wantSeq++
-		s.mu.Unlock()
-		s.deliverChunk(b)
-	}
+	// 已持锁版本见 flushReorderLocked
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.flushReorderLocked()
 }
 
 func (s *Stream) sendAck() {
@@ -496,9 +561,13 @@ func (s *Stream) sendAck() {
 }
 
 func (s *Stream) onAck(cum uint32, bitmap uint64) {
+	var fastResend [][]byte
 	s.mu.Lock()
 	for id := range s.inflight {
 		if seqSeqLt(id, cum) {
+			if p, ok := s.inflight[id]; ok {
+				s.ackBytes += int64(len(p.data))
+			}
 			delete(s.inflight, id)
 		}
 	}
@@ -507,12 +576,29 @@ func (s *Stream) onAck(cum uint32, bitmap uint64) {
 			id := cum + uint32(i)
 			if p, ok := s.inflight[id]; ok {
 				rtt := time.Since(p.sent)
+				s.ackBytes += int64(len(p.data))
 				delete(s.inflight, id)
 				updateRTT(s, rtt)
 			}
 		}
 	}
+	// #42 简化版快速重传：同一 cum 连续第 3 次 → 立即重发 cum 处包
+	if cum == s.lastCum {
+		s.dupAck++
+		if s.dupAck >= 2 {
+			if p, ok := s.inflight[cum]; ok {
+				fastResend = append(fastResend, p.data)
+			}
+			s.dupAck = 0
+		}
+	} else {
+		s.lastCum = cum
+		s.dupAck = 0
+	}
 	s.mu.Unlock()
+	for _, d := range fastResend {
+		s.sendFrame(innerDATA, d) // 锁外发送（工程纪律）
+	}
 }
 
 // updateRTT RFC 6298（调用方已持 s.mu）。
@@ -597,8 +683,9 @@ func (s *Stream) Write(b []byte) (int, error) {
 		}
 		chunk := b[off:end]
 		var seq uint32
+		var win int = s.window() // #44 简化版：吞吐估计动态窗口
 		s.mu.Lock()
-		if len(s.inflight) >= windowSize {
+		if len(s.inflight) >= win {
 			s.mu.Unlock()
 			select {
 			case <-s.dead:
@@ -611,9 +698,11 @@ func (s *Stream) Write(b []byte) (int, error) {
 		s.nextSeq++
 		// data 必须含 seq 头：重传直接重发整帧（曾因存裸 chunk 导致
 		// 重传帧被对端误读 seq 而全部丢弃——加密回环实测抓到）
-		s.inflight[seq] = &packet{data: seqPayload(seq, chunk), sent: time.Now()}
+		full := seqPayload(seq, chunk)
+		s.inflight[seq] = &packet{data: full, sent: time.Now()}
 		s.mu.Unlock()
-		s.sendFrame(innerDATA, s.inflight[seq].data)
+		s.sendFrame(innerDATA, full)
+		s.fecSend(seq, full) // #45：组满发 parity
 		off = end
 	}
 }
@@ -694,6 +783,39 @@ func (s *Stream) isDead() bool {
 // Dead 流死亡信号（对端 FIN / 超时 / 解密失败）。
 func (s *Stream) Dead() <-chan struct{} { return s.dead }
 
+// GotInbound 是否收到过对端的任何帧（打洞建立判定，ROADMAP #1）。
+func (s *Stream) GotInbound() bool {
+	s.mu2.Lock()
+	defer s.mu2.Unlock()
+	return s.lastSeen.After(s.createdAt)
+}
+
+// SendNudge 发一帧 KEEP（打洞喷包用：往对端 NAT 表项里砸包，ROADMAP #1/#5）。
+func (s *Stream) SendNudge() { s.sendFrame(innerKEEP, nil) }
+
+// NudgeTo 向指定地址喷 KEEP（端口预测 #3：对预测区间逐口喷包）。
+func (s *Stream) NudgeTo(addr *net.UDPAddr) {
+	remote := addr
+	if s.aead != nil {
+		inner := []byte{innerKEEP}
+		nonce := make([]byte, 12)
+		if _, err := crand.Read(nonce); err != nil {
+			return
+		}
+		out := make([]byte, 4, 4+1+12+len(inner)+16)
+		binary.BigEndian.PutUint32(out[0:4], s.tag)
+		out = append(out, routeENCRYPTED)
+		out = append(out, nonce...)
+		out = s.aead.Seal(out, nonce, inner, nil)
+		_, _ = s.ep.conn.WriteTo(out, remote)
+		return
+	}
+	out := make([]byte, 5)
+	binary.BigEndian.PutUint32(out[0:4], s.tag)
+	out[4] = innerKEEP
+	_, _ = s.ep.conn.WriteTo(out, remote)
+}
+
 // RTT 最近平滑 RTT（诊断面板 #62 输入）。
 func (s *Stream) RTT() time.Duration {
 	s.mu.Lock()
@@ -703,7 +825,7 @@ func (s *Stream) RTT() time.Duration {
 
 // net.Conn 接口余项。
 func (s *Stream) LocalAddr() net.Addr  { return s.ep.conn.LocalAddr() }
-func (s *Stream) RemoteAddr() net.Addr { return s.remote }
+func (s *Stream) RemoteAddr() net.Addr { return s.getRemote() }
 func (s *Stream) SetDeadline(t time.Time) error {
 	s.SetReadDeadline(t)
 	return s.SetWriteDeadline(t)
@@ -729,6 +851,151 @@ func (s *Stream) SetReadDeadline(t time.Time) error {
 		}
 	}()
 	return nil
+}
+
+// fecSend 组满 4 帧发 XOR parity（#45）。fire-and-forget：parity 本身不重传，
+// 丢失仅退化为该组不可恢复（正常网络 FEC 命中率足够）。
+func (s *Stream) fecSend(seq uint32, full []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fecBase == ^uint32(0) || seqSeqLt(s.fecBase+uint32(fecGroupSize), seq+1) || s.fecCount == 0 {
+		// 开新组（或 seqSeqLt 语义处理首组）
+		if s.fecCount == 0 {
+			s.fecBase = seq
+		}
+	}
+	if s.fecCount == 0 {
+		s.fecBase = seq
+	}
+	if s.fecAccum == nil {
+		s.fecAccum = append([]byte(nil), full...)
+	} else {
+		xorBytes(s.fecAccum, full)
+	}
+	s.fecCount++
+	if s.fecCount >= fecGroupSize {
+		head := make([]byte, 4)
+		binary.BigEndian.PutUint32(head, s.fecBase)
+		go s.sendFrame(innerFEC, append(head, s.fecAccum...))
+		s.fecAccum = nil
+		s.fecCount = 0
+	}
+}
+
+// fecCollect 接收端：完整 seqPayload 进组（#45）。
+func (s *Stream) fecCollect(seq uint32, full []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	base := seq - seq%uint32(fecGroupSize)
+	g := s.fecGroups[base]
+	if g == nil {
+		g = &fecGrp{frames: make(map[uint32][]byte), size: fecGroupSize}
+		s.fecGroups[base] = g
+	}
+	g.frames[seq] = append([]byte(nil), full...)
+	// 清理已完全消费的旧组
+	for b := range s.fecGroups {
+		if seqSeqLt(b+uint32(fecGroupSize), s.wantSeq+1) && b+uint32(fecGroupSize) <= s.wantSeq {
+			delete(s.fecGroups, b)
+		}
+	}
+}
+
+// fecTryRecover 组内缺一且有 parity → XOR 恢复（#45）。
+func (s *Stream) fecTryRecover() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fecRecoverLocked()
+	s.flushReorderLocked()
+}
+
+func (s *Stream) fecRecoverLocked() {
+	for base, g := range s.fecGroups {
+		if g.parity == nil {
+			continue
+		}
+		missing := uint32(0)
+		found := 0
+		var missSeq uint32
+		for i := 0; i < g.size; i++ {
+			id := base + uint32(i)
+			if _, ok := g.frames[id]; !ok {
+				missing++
+				missSeq = id
+			} else {
+				found++
+			}
+		}
+		if missing == 1 && found == g.size-1 {
+			acc := append([]byte(nil), g.parity...)
+			for _, f := range g.frames {
+				xorBytes(acc, f)
+			}
+			// acc 现在是缺失帧的完整 seqPayload；校验 seq
+			recSeq := binary.BigEndian.Uint32(acc[:4])
+			if recSeq == missSeq {
+				if _, dup := s.reorder[missSeq]; !dup && seqSeqLt(missSeq, s.wantSeq) == false && missSeq != s.wantSeq {
+					if len(s.reorder) < reorderMax {
+						s.reorder[missSeq] = append([]byte(nil), acc[4:]...)
+					}
+				} else if missSeq == s.wantSeq {
+					s.wantSeq++
+					s.deliverChunk(acc[4:])
+				}
+			}
+			delete(s.fecGroups, base) // 该组已消费
+		} else if found == g.size {
+			delete(s.fecGroups, base) // 全到齐，parity 无用
+		}
+	}
+}
+
+// flushReorderLocked 供 fecTryRecover 复用（原 flushReorder 的锁内版本）。
+func (s *Stream) flushReorderLocked() {
+	for {
+		b, ok := s.reorder[s.wantSeq]
+		if !ok {
+			return
+		}
+		delete(s.reorder, s.wantSeq)
+		s.wantSeq++
+		s.deliverChunk(b)
+	}
+}
+
+// xorBytes 就地 XOR。
+func xorBytes(dst, src []byte) {
+	for i := 0; i < len(dst) && i < len(src); i++ {
+		dst[i] ^= src[i]
+	}
+}
+
+// window BBR-lite 动态窗口（#44 简化版）：
+//
+//	吞吐估计（1s 滑窗）× RTT × 1.5 = BDP 估计，钳 [windowSize, windowMax]。
+//	不做慢启动、不追丢包信号——与 BBR 思想一致（按实际投递速率发）。
+func (s *Stream) window() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	elapsed := time.Since(s.rateStart).Seconds()
+	if elapsed >= 1 {
+		s.rateBPS = float64(s.ackBytes) / elapsed
+		s.ackBytes = 0
+		s.rateStart = time.Now()
+	}
+	rttSec := s.srtt
+	if rttSec <= 0 {
+		return windowSize
+	}
+	bdp := s.rateBPS * rttSec * 1.5
+	w := int(bdp / float64(ChunkSize))
+	if w < windowSize {
+		w = windowSize
+	}
+	if w > windowMax {
+		w = windowMax
+	}
+	return w
 }
 
 // seqSeqLt 环形序号比较 a < b。
