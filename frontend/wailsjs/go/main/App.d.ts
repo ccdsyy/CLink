@@ -54,6 +54,8 @@ export function OpenFolder(arg1:string):Promise<void>;
 
 export function PresetNodes():Promise<Record<string, any>>;
 
+export function Prewarm():Promise<void>;
+
 export function QuitApp():Promise<void>;
 
 export function RecentRooms():Promise<Array<string>>;

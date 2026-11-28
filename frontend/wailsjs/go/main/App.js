@@ -94,6 +94,10 @@ export function PresetNodes() {
   return window['go']['main']['App']['PresetNodes']();
 }
 
+export function Prewarm() {
+  return window['go']['main']['App']['Prewarm']();
+}
+
 export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }

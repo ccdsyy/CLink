@@ -30,6 +30,9 @@ export namespace main {
 	    turn: string;
 	    localPort: number;
 	    mcDir: string;
+	    relayNodes: string;
+	    relayPSK: string;
+	    proxyUrl: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new NetCfg(source);
@@ -45,6 +48,9 @@ export namespace main {
 	        this.turn = source["turn"];
 	        this.localPort = source["localPort"];
 	        this.mcDir = source["mcDir"];
+	        this.relayNodes = source["relayNodes"];
+	        this.relayPSK = source["relayPSK"];
+	        this.proxyUrl = source["proxyUrl"];
 	    }
 	}
 
