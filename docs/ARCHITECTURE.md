@@ -25,6 +25,13 @@ clink/
 │   └── linux/
 │
 ├── internal/                    # ══ 核心实现（不对外暴露，单元测试主战场）══
+│   ├── rudp/                    # ★ v1.4 自研可靠 UDP（序号/ACK/RTO/重排/加密/多路复用）
+│   ├── relay/                   # ★ v1.4 自建中继（鉴权 PING/无状态路由/选址）+ cmd/clink-relay
+│   ├── portmap/                 # ★ v1.4 端口映射（UPnP/NAT-PMP/PCP 自实现 + 有效性自检）
+│   ├── mcproto/                 # ★ v1.4 MC 协议感知（handshake 解析 / 未就绪代答）
+│   ├── lanscan/                 # ★ v1.4 LAN 组播发现（房主声明 / 客机扫描直连）
+│   ├── ipc/                     # ★ v1.4 本地 IPC（127.0.0.1:42656 JSON 行协议）
+│   ├── tunnel/                  # 路径抽象（tunnel.Path 五种实现）+ 单流 Muxer
 │   │
 │   ├── mailbox/                 # ★ Step 1 交付：UAPI/Clipzy 公共信箱客户端
 │   │   ├── client.go            #   HTTP 封装：store / get / shorten / redirectInfo

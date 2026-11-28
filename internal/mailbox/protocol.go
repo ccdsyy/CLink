@@ -66,18 +66,21 @@ var ErrInvalidRoomCode = errors.New("房间码格式不正确（6 位，不含 0
 
 // Signal 信令载荷：信箱中传输的明文结构（上链前加密）。
 type Signal struct {
-	V       int    `json:"v"`             // 协议版本
-	Type    string `json:"type"`          // "offer" | "answer"
-	Epoch   int    `json:"epoch"`         // 房间轮次（每完成一人加入 +1，兼容重连）
-	Tier    string `json:"tier"`          // "ipv6" | "webrtc" | "dual"
-	Nonce   string `json:"nonce"`         // 随机数，防重放
-	Ts      int64  `json:"ts"`            // 签发时间（Unix 秒）
-	SDP     string `json:"sdp,omitempty"` // WebRTC SDP
-	SDPType string `json:"sdpType,omitempty"`
-	V6      string `json:"v6,omitempty"`     // 房主公网 IPv6
-	V6Port  int    `json:"v6Port,omitempty"` // 房主 IPv6 监听端口
-	MCPort  int    `json:"mcPort"`           // 房主 MC 局域网端口
-	Name    string `json:"name,omitempty"`   // 玩家昵称（UI 显示）
+	V       int      `json:"v"`             // 协议版本
+	Type    string   `json:"type"`          // "offer" | "answer"
+	Epoch   int      `json:"epoch"`         // 房间轮次（每完成一人加入 +1，兼容重连）
+	Tier    string   `json:"tier"`          // "ipv6" | "webrtc" | "dual"
+	Nonce   string   `json:"nonce"`         // 随机数，防重放
+	Ts      int64    `json:"ts"`            // 签发时间（Unix 秒）
+	SDP     string   `json:"sdp,omitempty"` // WebRTC SDP
+	SDPType string   `json:"sdpType,omitempty"`
+	V6      string   `json:"v6,omitempty"`     // 房主公网 IPv6（主地址，旧客户端兼容）
+	V6Port  int      `json:"v6Port,omitempty"` // 房主 IPv6 监听端口
+	V6List  []string `json:"v6List,omitempty"` // 全部公网 v6 候选（含临时地址，ROADMAP #28）
+	PubTCP  string   `json:"pubTcp,omitempty"` // 房主 UPnP/PCP 映射的公网 TCP 端点（ROADMAP #22/#25）
+	NAT     string   `json:"nat,omitempty"`    // 房主 NAT 映射类别（EIM/nonEIM/unknown，ROADMAP #19 矩阵输入）
+	MCPort  int      `json:"mcPort"`           // 房主 MC 局域网端口
+	Name    string   `json:"name,omitempty"`   // 玩家昵称（UI 显示）
 }
 
 // GenRoomCode 生成 6 位防混淆房间码（拒绝采样消除模偏差）。

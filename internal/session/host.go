@@ -5,25 +5,35 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ccdsyy/clink/internal/blacklist"
+	"github.com/ccdsyy/clink/internal/lanscan"
 	"github.com/ccdsyy/clink/internal/mailbox"
 	"github.com/ccdsyy/clink/internal/netprobe"
+	"github.com/ccdsyy/clink/internal/portmap"
+	"github.com/ccdsyy/clink/internal/relay"
+	"github.com/ccdsyy/clink/internal/rudp"
+	"github.com/ccdsyy/clink/internal/tunnel"
 	"github.com/ccdsyy/clink/internal/tunnel/p2p"
 	"github.com/ccdsyy/clink/internal/tunnel/v6direct"
 )
 
 // HostConfig 房主配置。
 type HostConfig struct {
-	MCPort    int
-	STUN      []string
-	TURN      []string
-	Mailbox   *mailbox.Client
-	Blacklist *blacklist.Store // 可为 nil（无黑名单）
+	MCPort     int
+	STUN       []string
+	TURN       []string
+	Mailbox    *mailbox.Client
+	Blacklist  *blacklist.Store // 可为 nil（无黑名单）
+	RelayAddrs []*net.UDPAddr   // 自建中继节点（ROADMAP #31，空=不启用）
+	RelayPSK   string
 }
 
 // Host 房主会话状态机。
@@ -39,9 +49,14 @@ type Host struct {
 	code  string
 	epoch int
 
-	v6     *v6direct.Host
-	v6Addr string
-	v6Port int
+	v6      *v6direct.Host
+	v6Addrs []string // 全部公网 v6 候选（含临时地址，ROADMAP #28）
+	v6Addr  string
+	v6Port  int
+	pubTCP  string // UPnP/PCP 映射公网 TCP 端点（ROADMAP #22/#25）
+	natCls  string // 本机 NAT 映射类别（EIM/nonEIM/unknown，ROADMAP #19）
+
+	announce *lanscan.Announcer // LAN 组播声明（#66）
 
 	mu      sync.Mutex
 	pcs     map[string]*p2p.Host // 昵称 → 该客机的 WebRTC 端点
@@ -80,12 +95,176 @@ func StartHost(ctx context.Context, cfg HostConfig, emit func(Event)) (*Host, er
 		vh, port, err := v6direct.StartHost(c, cfg.MCPort)
 		if err == nil {
 			h.v6 = vh
-			h.v6Addr, h.v6Port = addrs[0].String(), port
+			for _, a := range addrs { // ROADMAP #28：全候选广播（含临时隐私地址）
+				h.v6Addrs = append(h.v6Addrs, a.String())
+			}
+			h.v6Addr, h.v6Port = h.v6Addrs[0], port
 		}
 	}
 
+	// NAT 映射类别探测（ROADMAP #19 矩阵输入）+ Tier 1.5 UPnP/PCP 端口映射
+	// （成功则信令携带公网 TCP 端点，客机可免穿透直连）
+	go func() {
+		h.natCls = netprobe.MappingClass()
+		h.setupPortMapping()
+	}()
+
+	// LAN 组播声明（#66）：同一局域网的客机可直接秒连
+	if h.v6 != nil {
+		h.announce = lanscan.StartAnnounce(h.code, h.v6Port)
+	}
+
+	// 自建中继注册（#31/#38/#39）：常驻保活 + 接受经中继的入站流
+	if len(cfg.RelayAddrs) > 0 {
+		go h.relayLoop()
+	}
+
+	// 房主常驻自检（#59）：每 5 分钟刷新 NAT 类别与直连评分并广播
+	go h.selfCheckLoop()
+
 	go h.loop()
 	return h, nil
+}
+
+// setupPortMapping 尝试 PCP/NAT-PMP/UPnP 把双栈隧道端口映射为公网
+// （ROADMAP #22/23/24），并经公网回环拨号实测有效性（#25）。
+// 成功后 Tier 1.5 生效：信令携带 PubTCP，客机免穿透直连。失败静默。
+// 前置条件：v6Port 隧道监听已起（双栈 tcp），否则没有可映射的存活内网口。
+func (h *Host) setupPortMapping() {
+	if h.v6Port == 0 {
+		return
+	}
+	res := portmap.Map(h.ctx, h.v6Port)
+	if res == nil {
+		return
+	}
+	ip := res.ExternalIP
+	if ip == "" {
+		ip, _ = netprobe.PublicV4()
+	}
+	if ip == "" {
+		return
+	}
+	h.mu.Lock()
+	h.pubTCP = net.JoinHostPort(ip, strconv.Itoa(res.ExternalPort))
+	h.mu.Unlock()
+	h.emit(Event{Stage: "info", Msg: "✨ 已通过 " + strings.ToUpper(res.Method) +
+		" 建立公网直连通道" + map[bool]string{true: "（已实测可达）", false: ""}[res.Verified]})
+}
+
+// relayLoop 房主侧中继会话：注册（role=host）→ 保活 → 接受 Mux 通道桥接 MC。
+// 断开后自动重选节点重连（#39 故障切换的房主侧）。
+func (h *Host) relayLoop() {
+	psk := h.cfg.RelayPSK
+	tag := relay.DeriveTag(psk, h.code)
+	key := relayKey(psk, h.code)
+
+	for {
+		if h.ctx.Err() != nil {
+			return
+		}
+		server, conn, err := relay.SelectRelay(psk, h.code, relay.RoleHost, h.cfg.RelayAddrs)
+		if err != nil {
+			h.emit(Event{Stage: "info", Msg: "自建中继暂不可达（" + err.Error() + "），不影响直连"})
+			select {
+			case <-h.ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+			}
+			continue
+		}
+		ep := rudp.Wrap(conn)
+		stream, err := ep.Open(server, tag, key)
+		if err != nil {
+			ep.Close()
+			continue
+		}
+		stop := make(chan struct{})
+		go relay.KeepaliveLoop(conn, server, tag, psk, h.code, relay.RoleHost, stop)
+		h.emit(Event{Stage: "info", Msg: "📡 中继节点已就绪（" + relay.AddrString(server) + "），对称型网络的伙伴也能加入了"})
+
+		// 接受 Mux 通道：每条通道 = 一条客机 MC 连接，桥接本机 MC 端口
+		mux := tunnel.NewMuxerServer(stream)
+		go func() {
+			for {
+				ch, err := mux.Accept()
+				if err != nil {
+					return
+				}
+				go func(ch *tunnel.MuxConn) {
+					defer ch.Close()
+					target, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", h.cfg.MCPort), 5*time.Second)
+					if err != nil {
+						return
+					}
+					if tc, ok := target.(*net.TCPConn); ok {
+						_ = tc.SetNoDelay(true) // #53
+					}
+					done := make(chan struct{}, 2)
+					go func() { _, _ = io.Copy(ch, target); done <- struct{}{} }()
+					go func() { _, _ = io.Copy(target, ch); done <- struct{}{} }()
+					<-done
+				}(ch)
+			}
+		}()
+
+		// 任一侧死亡 → 重选节点
+		select {
+		case <-stream.Dead():
+		case <-mux.Done():
+		case <-h.ctx.Done():
+			close(stop)
+			ep.Close()
+			return
+		}
+		close(stop)
+		ep.Close()
+	}
+}
+
+// selfCheckLoop 房主常驻自检（#59）：周期刷新直连评分并广播。
+func (h *Host) selfCheckLoop() {
+	score := func() int {
+		s := 0
+		if h.v6 != nil {
+			s += 60
+		}
+		h.mu.Lock()
+		pub := h.pubTCP
+		nat := h.natCls
+		h.mu.Unlock()
+		if pub != "" {
+			s += 30
+		}
+		if nat == "EIM" {
+			s += 10
+		}
+		if s == 0 {
+			s = 10 // 仅有打洞，保守估计
+		}
+		if s > 99 {
+			s = 99
+		}
+		return s
+	}
+	h.emit(Event{Stage: "info", Msg: fmt.Sprintf("🏠 房间可直连概率约 %d%%（小伙伴加入基本零等待）", score())})
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-t.C:
+		}
+		h.natCls = netprobe.MappingClass()
+		h.emit(Event{Stage: "info", Msg: fmt.Sprintf("🏠 房间可直连概率约 %d%%", score())})
+	}
+}
+
+// relayKey 中继路径端到端加密密钥（#51 简化版）：中继只见密文。
+func relayKey(psk, room string) []byte {
+	key, _ := mailbox.DeriveKey(room + "|relay|" + psk)
+	return key
 }
 
 // Code 房间码。
@@ -153,6 +332,7 @@ func (h *Host) Stop() {
 	if h.v6 != nil {
 		h.v6.Stop()
 	}
+	h.announce.Stop()
 }
 
 func (h *Host) loop() {
@@ -209,9 +389,13 @@ func (h *Host) runEpoch() error {
 	}
 	if h.v6 != nil {
 		sig.V6, sig.V6Port = h.v6Addr, h.v6Port
+		sig.V6List = h.v6Addrs // ROADMAP #28：全候选
 	} else {
 		sig.Tier = "webrtc"
 	}
+	h.mu.Lock()
+	sig.PubTCP, sig.NAT = h.pubTCP, h.natCls // ROADMAP #22/#19：公网直连端点 + NAT 类别
+	h.mu.Unlock()
 	payload, err := json.Marshal(sig)
 	if err != nil {
 		pc.Stop()

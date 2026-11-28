@@ -355,3 +355,52 @@ func JoinRoom(input string):
 | OpenRelay UDP 80 / TCP 443 | ❌ 2026-11 实测不可达（长期离线） |
 
 自定义 TURN 仍支持 `user:pass@turn:host:port` 逗号分隔列表，与预设节点叠加生效。
+
+
+## 10. 自建中继与 rudp 协议（v1.4 新增）
+
+### 10.1 路径层级（调度器实际顺序）
+
+```
+快速层（顺序，秒级预算）：
+  LAN 组播直连(#66) → 公网映射直连(#22 UPnP) → IPv6 直连(#28 多候选)
+竞速层（并行，先通先用）：
+  WebRTC 打洞 ∥ 自建中继(#31)
+```
+
+### 10.2 中继协议（internal/relay）
+
+单 UDP 数据报，与 rudp 共用帧头 `[4B tag][1B route][body]`：
+
+| route | 方向 | 语义 |
+|-------|------|------|
+| 0x20 PING | 客户端→中继 | body=`nonce8+role1+roomCode`；鉴权 + 登记 + 选址探测 |
+| 0x21 PONG | 中继→客户端 | 回显 nonce |
+| 其余 | 互转 | rudp 数据帧，按 tag 转发到「另一角色」登记地址 |
+
+- **鉴权（#33）**：tag = HMAC-SHA256(psk, "CLink-relay-v1
+"+room)[:4]，
+  服务端重算校验；失败静默丢弃，不会被当开放代理
+- **角色显式登记**：PING 带 role（0=guest 1=host）——实测教训：每端可能
+  先后出现「探测 socket + 常驻 socket」两个地址，靠"第二地址"猜对端必错
+- **无状态（#32）**：tag→两端地址 + 5min TTL；可靠性全部由端到端 rudp 承担
+- **选址（#38）**：并发 3 次 PING 取 RTT 中位数最小者；全部可达节点都注册（热备）
+
+### 10.3 rudp 可靠 UDP（internal/rudp）
+
+`[4B tag][1B route][body]`，route=0x00 表示加密内层 `[nonce12][GCM(kind‖payload)]`：
+
+- 序号 + 累积确认 + 64bit 选择性位图 + RFC6298 RTO 重传 + 乱序重排
+- MTU 钳制：应用分片 ≤1120B（整报文 <1200，#46）；应用层分片重组（#47）
+- 端到端加密（#51 简化版）：AES-256-GCM，密钥 = HKDF(room+"|relay|"+psk)，
+  中继只见密文
+- 单 Endpoint 承载任意多会话（4B tag 路由，#52）；中继路径内层 Muxer
+  帧 `[2B connID][2B len][payload]` 承载全部 MC 连接
+
+### 10.4 自研栈实测修复记录（2026-11-28，回环测试复现）
+
+1. **重传帧缺 seq 头**：inflight 存裸 chunk，重传被对端误读 seq 全丢
+2. **加密 KEEP 长度校验误杀**：空载荷帧 29B < 按 DATA 算的 33B 下限，
+   服务端把刚建的流立刻掐死
+3. **锁内同步发网络包**：WriteToUDP 阻塞时持锁等网络 → 读循环全体卡死
+   （p2p 心跳双锁 + rudp 重传循环同款症状；工程纪律：锁内绝不做 IO）

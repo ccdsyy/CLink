@@ -1,7 +1,7 @@
 // Package v6direct 实现 Tier 1：IPv6 公网直连 TCP 隧道。
 //
-// 房主侧：监听公网 IPv6 随机端口，把流量桥接到本机 MC 端口；
-// 客机侧：本机监听 127.0.0.1:25565，把流量桥接到房主 IPv6。
+// 房主侧：双栈监听随机端口（v6 直连 / LAN 直连 / UPnP 公网直连同口复用），
+// 把流量桥接到本机 MC 端口；客机侧：本机监听 127.0.0.1:25565，桥接到房主。
 // 全程点对点，无 NAT、无中转、无信令依赖。
 package v6direct
 
@@ -16,10 +16,11 @@ import (
 )
 
 // Bridge 双向桥接两条 TCP 连接，任一方向断开即整体回收。
-// 启用 20 秒 TCP KeepAlive 防止中间设备静默掐断长连接（应用层保活的系统级等价实现）。
+// 启用 20 秒 TCP KeepAlive 防止中间设备静默掐断长连接；
+// 关闭 Nagle（TCP_NODELAY）——游戏小包经 Nagle 缓冲凭空 +40ms，ROADMAP #53。
 func Bridge(a, b net.Conn) {
-	setKeepAlive(a, 20*time.Second)
-	setKeepAlive(b, 20*time.Second)
+	tuneConn(a, 20*time.Second)
+	tuneConn(b, 20*time.Second)
 	defer a.Close()
 	defer b.Close()
 	done := make(chan struct{}, 2)
@@ -28,10 +29,11 @@ func Bridge(a, b net.Conn) {
 	<-done
 }
 
-func setKeepAlive(c net.Conn, period time.Duration) {
+func tuneConn(c net.Conn, keepAlive time.Duration) {
 	if tc, ok := c.(*net.TCPConn); ok {
 		_ = tc.SetKeepAlive(true)
-		_ = tc.SetKeepAlivePeriod(period)
+		_ = tc.SetKeepAlivePeriod(keepAlive)
+		_ = tc.SetNoDelay(true) // ROADMAP #53
 	}
 }
 
@@ -44,9 +46,10 @@ type Host struct {
 	ctx    context.Context
 }
 
-// StartHost 启动房主侧 IPv6 监听。返回实际端口（写入信令 V6Port）。
+// StartHost 启动房主侧隧道监听。双栈（tcp = v6+v4）：
+// 同一端口同时服务 IPv6 直连、LAN 组播发现直连（#66）与 UPnP 公网直连（#22）。
 func StartHost(ctx context.Context, mcPort int) (*Host, int, error) {
-	ln, err := net.Listen("tcp6", ":0")
+	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		return nil, 0, fmt.Errorf("IPv6 监听失败: %w", err)
 	}
@@ -119,7 +122,7 @@ func (g *Guest) accept(ctx context.Context) {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			remote, err := net.DialTimeout("tcp6", g.hostAddr, 8*time.Second)
+			remote, err := net.DialTimeout("tcp", g.hostAddr, 8*time.Second)
 			if err != nil {
 				return
 			}

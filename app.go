@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"github.com/ccdsyy/clink/internal/blacklist"
+	"github.com/ccdsyy/clink/internal/ipc"
+	"github.com/ccdsyy/clink/internal/lanscan"
 	"github.com/ccdsyy/clink/internal/mailbox"
 	"github.com/ccdsyy/clink/internal/mclog"
 	"github.com/ccdsyy/clink/internal/modhub"
 	"github.com/ccdsyy/clink/internal/netprobe"
 	"github.com/ccdsyy/clink/internal/notify"
+	"github.com/ccdsyy/clink/internal/relay"
 	"github.com/ccdsyy/clink/internal/session"
 	"github.com/ccdsyy/clink/internal/smsbox"
 	"github.com/ccdsyy/clink/internal/sysguard"
@@ -40,6 +43,8 @@ type App struct {
 	sms    *smsbox.Client
 	smsLim *smsbox.Limiter
 
+	scanner *lanscan.Scanner // LAN 组播发现（ROADMAP #66）
+
 	ballMode  bool // 悬浮球模式
 	minimised bool // 主窗口最小化中（通知判断用）
 	restoreW  int  // 悬浮球恢复尺寸
@@ -53,8 +58,8 @@ type App struct {
 
 // 版本信息：每次发版改这里 + website/update.json（build 必须同时 +1）。
 const (
-	AppVersion = "1.3.0"
-	AppBuild   = 4 // 发布编号：1=v1.0.0, 2=v1.1.0, 3=v1.2.0, 4=v1.3.0, …
+	AppVersion = "1.4.0"
+	AppBuild   = 5 // 发布编号：1=v1.0.0 … 4=v1.3.0, 5=v1.4.0, …
 )
 
 // Config 持久化配置（%APPDATA%/CLink/config.json）。
@@ -68,6 +73,8 @@ type Config struct {
 	TurnNodes         []string `json:"turnNodes"`   // 启用的预设 TURN 节点名
 	LocalPort         int      `json:"localPort"`   // 客机本地监听端口（默认 25565）
 	RecentRooms       []string `json:"recentRooms"` // 最近房间码（快速重连）
+	RelayNodes        string   `json:"relayNodes"`  // 自建中继节点列表（ROADMAP #31，udp://ip:port 逗号分隔）
+	RelayPSK          string   `json:"relayPSK"`    // 中继共享口令（与 clink-relay 服务端一致）
 	FwDone            bool     `json:"fwDone"`
 	Name              string   `json:"name"`              // 玩家昵称（黑名单/通知/成员列表标识）
 	NotifyOn          bool     `json:"notifyOn"`          // 加入通知开关
@@ -81,14 +88,16 @@ type Config struct {
 
 // NetCfg 网络与信令设置（设置页整卡读写）。
 type NetCfg struct {
-	Node      string   `json:"node"`      // 信令节点：auto|clip1|uapi|custom
-	Mailbox   string   `json:"mailbox"`   // 自定义信令节点地址
-	StunMode  string   `json:"stunMode"`  // auto|custom
-	Stun      string   `json:"stun"`      // 自定义 STUN 列表
-	TurnNodes []string `json:"turnNodes"` // 启用的预设 TURN 节点名
-	Turn      string   `json:"turn"`      // 自定义 TURN 列表
-	LocalPort int      `json:"localPort"` // 客机本地端口（1-65535）
-	MCDir     string   `json:"mcDir"`     // MC 目录
+	Node       string   `json:"node"`       // 信令节点：auto|clip1|uapi|custom
+	Mailbox    string   `json:"mailbox"`    // 自定义信令节点地址
+	StunMode   string   `json:"stunMode"`   // auto|custom
+	Stun       string   `json:"stun"`       // 自定义 STUN 列表
+	TurnNodes  []string `json:"turnNodes"`  // 启用的预设 TURN 节点名
+	Turn       string   `json:"turn"`       // 自定义 TURN 列表
+	LocalPort  int      `json:"localPort"`  // 客机本地端口（1-65535）
+	MCDir      string   `json:"mcDir"`      // MC 目录
+	RelayNodes string   `json:"relayNodes"` // 自建中继节点
+	RelayPSK   string   `json:"relayPSK"`   // 中继共享口令
 }
 
 // NewApp 构造（加载配置）。
@@ -102,6 +111,9 @@ func NewApp() *App {
 	case "auto", "clip1", "uapi", "custom":
 	default:
 		a.cfg.MailboxNode = "auto"
+	}
+	if a.cfg.RelayPSK == "" {
+		a.cfg.RelayPSK = "clink-relay-psk-v1" // 内置默认；自建节点时改成自己的
 	}
 	switch a.cfg.StunMode {
 	case "auto", "google", "miwifi", "cloudflare", "nextcloud", "custom":
@@ -201,6 +213,37 @@ func (a *App) startup(ctx context.Context) {
 	updCtx, cancel := context.WithCancel(ctx)
 	a.updCancel = cancel
 	go a.updateLoop(updCtx)
+
+	// LAN 组播发现（ROADMAP #66）：房主声明 / 客机扫描
+	a.scanner = lanscan.StartScan()
+
+	// 本地 IPC（ROADMAP #69）：启动器 / 第三方 Mod 可调用穿透栈
+	ipc.Serve(ipc.Handler{
+		Status: a.Status,
+		Create: a.CreateRoom,
+		Join:   a.JoinRoom,
+		Leave:  a.Leave,
+		Recent: a.RecentRooms,
+	})
+
+	// 启动预热（ROADMAP #9/#60 输码即预热）：NAT 分类 + STUN 选优缓存
+	// + 对选中节点发 5 次 binding 焐热 NAT 映射
+	go func() {
+		_ = netprobe.MappingClass()
+		_ = netprobe.PickSTUN()
+		for i := 0; i < 5; i++ {
+			if _, err := netprobe.PublicV4(); err != nil {
+				return
+			}
+			time.Sleep(400 * time.Millisecond)
+		}
+	}()
+}
+
+// Prewarm 供前端在输入房间码时主动触发（与启动预热共用缓存）。
+func (a *App) Prewarm() {
+	_ = netprobe.MappingClass()
+	_ = netprobe.PickSTUN()
 }
 
 // updateLoop 周期检查新版本（发布编号去重通知）。
@@ -473,14 +516,19 @@ func (a *App) CreateRoom(mcPort int) (string, error) {
 				a.emit(session.Event{Stage: "info", Msg: "防火墙放行未完成：" + err.Error() + "（联机可能受影响，可稍后重试）"})
 			}
 		}
+		if name := sysguard.DetectThirdPartyFirewall(); name != "" {
+			a.emit(session.Event{Stage: "info", Msg: "⚠️ 检测到 " + name + "：请在其弹窗中允许 CLink 联网，否则打洞可能被拦截"})
+		}
 	}()
 
 	host, err := session.StartHost(a.ctx, session.HostConfig{
-		MCPort:    mcPort,
-		STUN:      a.stunList(),
-		TURN:      a.turnList(),
-		Mailbox:   a.mailboxClient(),
-		Blacklist: a.bl,
+		MCPort:     mcPort,
+		STUN:       a.stunList(),
+		TURN:       a.turnList(),
+		Mailbox:    a.mailboxClient(),
+		Blacklist:  a.bl,
+		RelayAddrs: relay.ParseAddrs(a.cfg.RelayNodes),
+		RelayPSK:   a.cfg.RelayPSK,
 	}, a.emit)
 	if err != nil {
 		return "", err
@@ -511,12 +559,15 @@ func (a *App) JoinRoom(code, name string) error {
 	}
 
 	guest, err := session.StartGuest(a.ctx, session.GuestConfig{
-		Code:      strings.TrimSpace(strings.ToLower(code)),
-		Name:      strings.TrimSpace(name),
-		STUN:      a.stunList(),
-		TURN:      a.turnList(),
-		Mailbox:   a.mailboxClient(),
-		LocalPort: a.cfg.LocalPort,
+		Code:       strings.TrimSpace(strings.ToLower(code)),
+		Name:       strings.TrimSpace(name),
+		STUN:       a.stunList(),
+		TURN:       a.turnList(),
+		Mailbox:    a.mailboxClient(),
+		LocalPort:  a.cfg.LocalPort,
+		RelayAddrs: relay.ParseAddrs(a.cfg.RelayNodes),
+		RelayPSK:   a.cfg.RelayPSK,
+		Scanner:    a.scanner,
 	}, a.emit)
 	if err != nil {
 		return err
@@ -780,7 +831,8 @@ func (a *App) SmsInvite(phone string) error {
 func (a *App) Status() map[string]any {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	st := map[string]any{"mode": "idle", "name": a.cfg.Name, "ball": a.ballMode}
+	st := map[string]any{"mode": "idle", "name": a.cfg.Name, "ball": a.ballMode,
+		"nat": netprobe.MappingClass()}
 	if a.host != nil {
 		st["mode"] = "host"
 		st["code"] = a.host.Code()
@@ -827,6 +879,8 @@ func (a *App) SetNet(v NetCfg) error {
 	a.cfg.TURN = strings.TrimSpace(v.Turn)
 	a.cfg.LocalPort = lp
 	a.cfg.MCDir = strings.TrimSpace(v.MCDir)
+	a.cfg.RelayNodes = strings.TrimSpace(v.RelayNodes)
+	a.cfg.RelayPSK = strings.TrimSpace(v.RelayPSK)
 	a.mu.Unlock()
 	a.saveConfig()
 	return nil
@@ -837,14 +891,16 @@ func (a *App) GetNet() NetCfg {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return NetCfg{
-		Node:      a.cfg.MailboxNode,
-		Mailbox:   a.cfg.MailboxBase,
-		StunMode:  a.cfg.StunMode,
-		Stun:      a.cfg.StunCustom,
-		TurnNodes: a.cfg.TurnNodes,
-		Turn:      a.cfg.TURN,
-		LocalPort: a.cfg.LocalPort,
-		MCDir:     a.cfg.MCDir,
+		Node:       a.cfg.MailboxNode,
+		Mailbox:    a.cfg.MailboxBase,
+		StunMode:   a.cfg.StunMode,
+		Stun:       a.cfg.StunCustom,
+		TurnNodes:  a.cfg.TurnNodes,
+		Turn:       a.cfg.TURN,
+		LocalPort:  a.cfg.LocalPort,
+		MCDir:      a.cfg.MCDir,
+		RelayNodes: a.cfg.RelayNodes,
+		RelayPSK:   a.cfg.RelayPSK,
 	}
 }
 

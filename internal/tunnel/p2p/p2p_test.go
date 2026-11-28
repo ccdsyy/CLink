@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"context"
 	"io"
 	"net"
 	"testing"
@@ -68,83 +67,32 @@ func TestP2PLoopback(t *testing.T) {
 		t.Fatal("房主 ctrl 通道超时未打通")
 	}
 
-	// 客机开本地监听（随机端口）
-	if err := g.ServeLocal(context.Background(), 0); err != nil {
-		t.Fatal(err)
+	// #56 路径抽象：调度器 accept 本地连接后调 Open() 取对端流再桥接。
+	// 这里模拟三条本地连接，Open() 三次，全部走同一套 open/ack 握手。
+	testOpen := func(payload []byte) {
+		remote, err := g.Open()
+		if err != nil {
+			t.Fatalf("Open 失败: %v", err)
+		}
+		defer remote.Close()
+		go func() { _, _ = remote.Write(payload) }()
+		got := make([]byte, len(payload))
+		_ = remote.SetReadDeadline(time.Now().Add(15 * time.Second))
+		if _, err := io.ReadFull(remote, got); err != nil {
+			t.Fatalf("回读失败: %v", err)
+		}
+		for i := range payload {
+			if payload[i] != got[i] {
+				t.Fatalf("数据不一致 @%d", i)
+			}
+		}
 	}
-	local := "127.0.0.1:" + itoa(g.LocalPort())
 
-	// 连接 1：模拟 MC 客户端 ping
-	c1, err := net.DialTimeout("tcp", local, 5*time.Second)
-	if err != nil {
-		t.Fatalf("本地连接失败: %v", err)
-	}
-	testEcho(t, c1, "hello-clink")
-
-	// 连接 2：模拟正式游戏连接（验证多通道并发）
-	c2, err := net.DialTimeout("tcp", local, 5*time.Second)
-	if err != nil {
-		t.Fatalf("第二条本地连接失败: %v", err)
-	}
-	testEcho(t, c2, "second-connection-payload")
-
-	// 大分片验证（> 16KB，跨多个 DataChannel 消息）
-	c3, err := net.DialTimeout("tcp", local, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	big := make([]byte, chunkSize*3)
+	testOpen([]byte("hello-clink"))               // MC ping
+	testOpen([]byte("second-connection-payload")) // 多通道并发
+	big := make([]byte, chunkSize*3)              // >16KB 跨分片
 	for i := range big {
 		big[i] = byte(i % 251)
 	}
-	go func() { _, _ = c3.Write(big) }()
-	got := make([]byte, len(big))
-	_ = c3.SetReadDeadline(time.Now().Add(15 * time.Second))
-	if _, err := io.ReadFull(c3, got); err != nil {
-		t.Fatalf("大包回读失败: %v", err)
-	}
-	for i := range big {
-		if big[i] != got[i] {
-			t.Fatalf("大包数据不一致 @%d", i)
-		}
-	}
-	_ = c3.Close()
-}
-
-func testEcho(t *testing.T, c net.Conn, msg string) {
-	t.Helper()
-	_ = c.SetDeadline(time.Now().Add(15 * time.Second))
-	if _, err := c.Write([]byte(msg)); err != nil {
-		t.Fatalf("写入失败: %v", err)
-	}
-	buf := make([]byte, len(msg))
-	if _, err := io.ReadFull(c, buf); err != nil {
-		t.Fatalf("回读失败: %v", err)
-	}
-	if string(buf) != msg {
-		t.Fatalf("echo 不一致: %q != %q", buf, msg)
-	}
-	_ = c.Close()
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
+	testOpen(big)
 }

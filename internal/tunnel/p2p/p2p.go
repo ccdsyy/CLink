@@ -1,8 +1,9 @@
 // Package p2p 实现 Tier 2：WebRTC DataChannel 隧道（pion/webrtc）。
 //
 // 通道规划（全部 Negotiated，双方按固定 ID 创建）：
-//   ID 1        clink-ctrl   控制通道：开关数据通道 + 心跳 ping/pong
-//   ID 10..     clink-data   每条本地 TCP 连接（MC 客户端）一条
+//
+//	ID 1        clink-ctrl   控制通道：开关数据通道 + 心跳 ping/pong
+//	ID 10..     clink-data   每条本地 TCP 连接（MC 客户端）一条
 //
 // 客机本地每接受一条 TCP 连接（MC 的 ping + 正式连接各一条），
 // 经 ctrl 通道请求房主开通对应 ID 的 DataChannel，房主侧 dial MC 服务端口并桥接。
@@ -140,10 +141,16 @@ func bridgeDC(dc *webrtc.DataChannel, conn net.Conn) {
 	})
 }
 
-// dialLocalTCP 连接本机 MC 端口（房主侧）。
+// dialLocalTCP 连接本机 MC 端口（房主侧），关闭 Nagle（ROADMAP #53）。
 func dialLocalTCP(port int) (net.Conn, error) {
 	d := net.Dialer{Timeout: 5 * time.Second}
-	return d.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	c, err := d.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err == nil {
+		if tc, ok := c.(*net.TCPConn); ok {
+			_ = tc.SetNoDelay(true)
+		}
+	}
+	return c, err
 }
 
 // sdpTypeFrom / sdpTypeTo —— SDPType 枚举与字符串互转（跨信令传输）。

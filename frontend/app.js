@@ -148,6 +148,17 @@
   }
   renderRecentRooms();
 
+  let prewarmTimer = null;
+  $("join-code").addEventListener("input", () => {
+    // ROADMAP #60：敲房间码时后台预热（NAT 分类 + STUN 缓存）
+    if ($("join-code").value.trim().length >= 4 && !prewarmTimer) {
+      prewarmTimer = setTimeout(() => {
+        prewarmTimer = null;
+        call("Prewarm").catch(() => {});
+      }, 500);
+    }
+  });
+
   $("btn-join").addEventListener("click", async () => {
     if (busy) return;
     const code = $("join-code").value.trim().toLowerCase();
@@ -621,6 +632,8 @@
       turn: $("set-turn").value.trim(),
       localPort: parseInt($("set-localport").value || "25565", 10),
       mcDir: $("set-mcdir").value.trim(),
+      relayNodes: $("set-relay").value.trim(),
+      relayPSK: $("set-relaypsk").value.trim(),
     };
     call("SetNet", cfg)
       .then(() => { toast("已保存", "ok"); refreshModsDirLabel(); })
@@ -719,6 +732,8 @@
       $("set-stun").value = net.stun || "";
       $("set-turn").value = net.turn || "";
       $("set-localport").value = net.localPort || 25565;
+      $("set-relay").value = net.relayNodes || "";
+      $("set-relaypsk").value = net.relayPSK || "";
       $("set-mcdir").value = net.mcDir || "";
       // 预设节点渲染（信令下拉/TURN 勾选列表）
       try {

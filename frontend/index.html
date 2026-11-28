@@ -216,6 +216,11 @@
       <label class="lbl" for="set-localport">本地端口（加入房间用；被占用或自己开了服务器时可改）</label>
       <input id="set-localport" type="text" inputmode="numeric" placeholder="25565" autocomplete="off">
 
+      <label class="lbl" for="set-relay">自建中继节点（可选 · 对称 NAT 兜底 · udp://IP:端口 逗号分隔）</label>
+      <input id="set-relay" type="text" placeholder="udp://1.2.3.4:34780,udp://5.6.7.8:34780" autocomplete="off">
+      <label class="lbl" for="set-relaypsk">中继共享口令（与 clink-relay 服务端 -psk 一致）</label>
+      <input id="set-relaypsk" type="text" placeholder="clink-relay-psk-v1（默认）" autocomplete="off">
+
       <label class="lbl" for="set-mcdir">MC 目录（.minecraft 所在路径，用于模组下载）</label>
       <input id="set-mcdir" type="text" placeholder="C:\Users\你\AppData\Roaming\.minecraft" autocomplete="off">
       <button id="btn-save-adv" class="btn primary sm">保存</button>
